@@ -1,0 +1,32 @@
+#use-added-syntax(jitx)
+defpackage ethernet-io/power:
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl/bundles
+
+
+doc: \<DOC>
+
+<DOC>
+public pcb-module power-mng:
+  port VIN : power
+
+  port VUSB-in : power
+
+  port VDD-3v3 : power
+  port VDD-1v2 : power
+
+
+  ; DC / DC 24V -> 5V
+
+  ; Diode OR
+  ;   DC/DC 5V -----
+  ;   VUSB-in  -----|----- 5V
+  ; 
+  ; 
+  ; DC/DC 5V -> 3.3V
+  ; DC/DC 5V -> 1.2V
+
+  
