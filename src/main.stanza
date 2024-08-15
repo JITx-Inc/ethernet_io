@@ -9,14 +9,20 @@ defpackage ethernet-io/main :
   import ethernet-io/helpers
   import ethernet-io/power
 
-  import jsl/circuits/ConfigStrap
+  import jlc-pcb/stackups/vias
+
   import jsl/symbols/net-symbols
+  import jsl/si
+
+  import jsl/protocols/ethernet/MII/RMII
 
 ; Define the shape/size of the board
-val board-shape = RoundedRectangle(50.0, 30.0, 0.25)
+; val board-shape = RoundedRectangle(70.0, 50.0, 0.25)
+val board-shape = RoundedRectangle(170.0, 150.0, 0.25)
+
 
 ; Set the Global Query Defaults
-set-global-query-defaults!(min-stock = 1, mounting = "smd")
+set-global-query-defaults!(min-stock = 1, mounting = "smd", case = ["0402", "0603", "0805", "1206"])
 
 ; Module to run as a design
 pcb-module top-level :
@@ -29,36 +35,34 @@ pcb-module top-level :
   net GND (pwr-mng.VIN.V-)
   symbol(GND) = GND-SYMB
 
-  inst netsw : ethernet_io_lib/components/KSZ9563/module
+  inst netsw : ethernet-io/network-switch/circuit(tented-filled-std-via)
 
-  net (pwr-mng.VDD-3v3, netsw.rail-analog, netsw.rail-IO)
+  net (pwr-mng.VDD-3v3, netsw.VDD-3v3)
+  net (pwr-mng.VDD-1v2, netsw.VDD-1v2)
 
-  val pullup-R = create-resistor(resistance = 100.0e3, precision = (1 %))
-  inst configs : ConfigStrap(
-    num-elems = 4,
-    comp = pullup-R,
-    pack? = One(LongitudinalPacking(margin = 0.2))
-  )
-  net (configs.lo, GND)
+  inst controller : ethernet-io/MCU/circuit
+  net (pwr-mng.VDD-3v3, controller.rail-3v3)
 
-  require straps:config-strap-bus(4) from configs
+  val rmii-cst = RMII-Constraint(jlc-pcb/stackups/JLC04161H-7628/se-50())
+  constrain-topology(controller.mii => netsw.mii, rmii-cst)
 
-  net (straps.config[0], netsw.C.LED0[0])
-  net (straps.config[1], netsw.C.LED0[1])
-  net (straps.config[2], netsw.C.LED1[0])
-  net (straps.config[3], netsw.C.LED1[1])
+  net (controller.mdio, netsw.management)
 
-setup-design(
-  "ethernet-io",
-  ; TODO - this needs to be replaced with fab support JLCPCB library
-  ocdb/utils/defaults/default-board(ocdb/manufacturers/stackups/jlcpcb-jlc2313, board-shape)
-)
+  ; Array Stuff
 
-; Set the top level module (the module to be compile into a schematic and PCB)
+  inst cls : ethernet-io/current-loop/current-loop[10]
+
+  for i in 0 to length(cls) do:
+    net (GND, cls[i].pwr.V-)
+
+
+
+setup-board("ethernet-io", board-shape, signal-shrink = 0.5)
 set-main-module(top-level)
 
 ; View the results
+view-design-explorer()
+; view-bom(BOM-STD)
 view-schematic()
 view-board()
-; view-design-explorer()
-; view-bom(BOM-STD)
+

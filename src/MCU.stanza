@@ -1,0 +1,86 @@
+#use-added-syntax(jitx)
+defpackage ethernet-io/MCU:
+  import core
+  import jitx
+  import jitx/commands
+  import jitx/parts/query-api
+
+  import jsl/protocols/ethernet/MII/RMII
+  import jsl/protocols/ethernet/MII/MIIM
+
+  import jsl/si
+  import jsl/bundles
+
+
+val rmii-bus = rmii(add-rx-error = false)
+
+
+public pcb-module circuit:
+
+  port rail-3v3 : power
+  port mii : rmii-bus
+  port mdio : miim
+
+  public inst mcu : stmicro/components/STM32H723VGT6/module
+
+  net (rail-3v3, mcu.rail-VDD)
+
+  ; setup the RMII interface - we want
+  ;  to place resistors on the transmit pins
+  ;  from the MCU and short-trace them close
+  ;  to the MCU.
+
+  require mii-bus:rmii-bus from mcu
+
+  topo-net(mii-bus.crs-dv => mii.crs-dv)
+  topo-net(mii-bus.ref-clk => mii.ref-clk)
+  for i in 0 to length(mii-bus.rxd) do:
+    topo-net(mii-bus.rxd[i] => mii.rxd[i])
+
+  ; Create Series resistor
+  val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0603"])
+
+  for i in 0 to length(mii-bus.txd) do:
+    inst dampener : series-R-type
+    topo-net(mii-bus.txd[i] => dampener.p[1] )
+    topo-net(dampener.p[2] => mii.txd[i] )
+    short-trace(dampener.p[1], mii-bus.txd[i])
+    pin-model(dampener.p[1], dampener.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
+
+  inst tx-en-dampener : series-R-type
+  topo-net(mii-bus.tx-en => tx-en-dampener.p[1])
+  topo-net(tx-en-dampener.p[2] => mii.tx-en)
+  short-trace(tx-en-dampener.p[1], mii-bus.tx-en)
+  pin-model(tx-en-dampener.p[1], tx-en-dampener.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
+
+  ; Set signal ends so we get the right routing
+  ;    structure all the way to the pin.
+  set-signal-end(mii, mii-bus)
+
+  require mng-bus : miim from mcu
+
+  ; Add Pullup resistors
+  net (mng-bus.mdc, mdio.mdc)
+  net (mng-bus.mdio, mdio.mdio)
+
+  val pullup-miim = create-resistor(resistance = 4.7e3, precision = (1 %))
+
+  inst pullup-mdio : pullup-miim
+  net (pullup-mdio.p[1], mng-bus.mdio)
+  net (pullup-mdio.p[2], rail-3v3.V+)
+
+  inst pullup-mdc : pullup-miim
+  net (pullup-mdc.p[1], mng-bus.mdc)
+  net (pullup-mdc.p[2], rail-3v3.V+)
+
+  ; Depopulate the Pullup on MDC because it
+  ;  is not needed according to the KSZ9563 datasheet
+  ;  This is a hedge.
+  instance-status(pullup-mdc):
+    bom-status = NotInBOM
+
+  ; TODO  - Add Ferrite for connecting VDD to VDA
+
+  ;   net (rail-3v3, mcu.rail-VDDA)
+
+  ; TODO - USB interface

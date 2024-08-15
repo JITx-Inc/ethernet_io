@@ -1,0 +1,73 @@
+#use-added-syntax(jitx)
+defpackage ethernet-io/current-loop:
+  import core
+  import jitx
+  import jitx/commands
+  import jitx/parts/query-api
+
+  import jsl/bundles
+
+public pcb-module current-loop :
+
+  port pwr : power
+
+  port sig
+  port out
+
+  inst R-load : create-resistor(resistance = 100.0, precision = (1 %))
+
+
+  net (sig, R-load.p[1])
+  net (R-load.p[2], pwr.V-)
+
+  inst amp : ethernet_io_lib/components/TS971ILT/TS971ILT
+
+  net (amp.VCC, pwr.V+)
+  net (amp.VEE, pwr.V+)
+
+  val bypass-query = CapacitorQuery(
+    type = "ceramic",
+    temperature-coefficient_code = "X7R",
+    sort! = SortKey(rated-voltage = Increasing)
+  )
+
+  insert-capacitor(
+    amp.VCC, amp.VEE,
+    bypass-query,
+    capacitance = 0.1e-9
+    short-trace? = true
+    rated-voltage = AtLeast(2.0 * 3.3)
+  )
+
+  ; Filter
+  insert-resistor(
+    sig, amp.IN+,
+    resistance = 1.0e3,
+    precision = (1 %)
+  )
+
+  insert-capacitor(
+    amp.IN+, pwr.V-,
+    bypass-query,
+    capacitance = 100.0e-12,
+    rated-voltage = AtLeast(30.0)
+  )
+
+
+  ; Feedback = Create a gain circuit
+  ; for a `non-inverting` amplifier
+
+  insert-resistor(
+    amp.OUT, amp.IN-,
+    resistance = 10.0e3,
+    precision = (1 %)
+  )
+
+  insert-resistor(
+    amp.IN-, pwr.V-,
+    resistance = 10.0e3,
+    precision = (1 %)
+  )
+
+  net (amp.OUT, out)
+

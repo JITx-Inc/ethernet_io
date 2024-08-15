@@ -1,9 +1,11 @@
 name = "ethernet_io"
 version = "0.1.0"
 [dependencies]
-jsl = { git = "JITx-Inc/jsl", version = "0.4.0" }
-#jsl = { path = "{HOME}/src/jsl"}
-ethernet_io_lib = { git = "JITx-Inc/ethernet_io_lib", version="0.1.2"}
-# ethernet_io_lib = { path = "{HOME}/designs/ethernet_io_lib"}
+jsl = { path = "libs/jsl"}
+connectors = { path = "libs/connectors"}
+power-systems = { path = "libs/power-systems"}
+ethernet_io_lib = { path = "libs/ethernet_io_lib"}
+jlc-pcb = {path = "libs/jlc-pcb"}
+stmicro = {path = "libs/stmicro"}
 JITX = { path = "{SLM_ROOT}/JITX" }
 ocdb = { path = "{SLM_ROOT}/ocdb" }

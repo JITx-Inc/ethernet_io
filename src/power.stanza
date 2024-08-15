@@ -3,30 +3,65 @@ defpackage ethernet-io/power:
   import core
   import jitx
   import jitx/commands
+  import jitx/parts/query-api
 
   import jsl/bundles
+  import jsl/symbols/net-symbols
 
+  import power-systems/filters
 
 doc: \<DOC>
+Construct the power sub-system of the design.
 
+@member VIN System level input power - Current Design is targeting 24V
+@member VUSB-in Voltage rail from the debug USB connector. Primarily
+this is intended to be used for debugging and not used in application.
+@member VDD-3v3 Low voltage 3.3V rail
+@member VDD-1v2 Low voltage 1.2V rail
 <DOC>
 public pcb-module power-mng:
   port VIN : power
 
   port VUSB-in : power
 
+  port VDD-5v : power
   port VDD-3v3 : power
   port VDD-1v2 : power
 
+  net GND (VIN.V-, VUSB-in.V-, VDD-1v2.V-, VDD-3v3.V-, VDD-5v.V-)
 
   ; DC / DC 24V -> 5V
+  ; CJA - PD-Audio has a DC/DC we can use to not start from scratch
+  ;  Power library
+  ; inst DCDC-5v : asdf
+  ; Connect to `VDD-5v.V+`
 
   ; Diode OR
-  ;   DC/DC 5V -----
+  ;   DC/DC 5V -----┐
   ;   VUSB-in  -----|----- 5V
-  ; 
-  ; 
-  ; DC/DC 5V -> 3.3V
-  ; DC/DC 5V -> 1.2V
 
-  
+  val diode-type = create-resistor(resistance = 1.0e3, precision = (1 %))
+  inst USB-OR : diode-OR(diode-type, 2)
+  net (USB-OR.vin[0], VUSB-in)
+  net (USB-OR.vin[1], VDD-5v)
+
+  net VDD-USB (USB-OR.vout.V+)
+  symbol(VDD-USB) = PWR-SYMB
+
+  ;
+  ; Duncan
+  ; DC/DC 5V -> 3.3V
+  ; inst DCDC-3v3 : asdf
+
+  net VDD-3v3-n (VDD-3v3.V+)
+  symbol(VDD-3v3-n) = PWR-SYMB
+
+
+
+  ; Duncan
+  ; DC/DC 5V -> 1.2V
+  ; inst DCDC-1v2 : asdf
+
+  net VDD-1v2-n (VDD-1v2.V+)
+  symbol(VDD-1v2-n) = PWR-SYMB
+

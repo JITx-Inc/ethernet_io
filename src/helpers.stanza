@@ -8,34 +8,67 @@ defpackage ethernet-io/helpers :
   import jitx
   import jitx/commands
 
+  import jsl/ensure
+
+  import jlc-pcb/stackups/vias
+  import jlc-pcb/rules/multi_1oz
+
   ; TODO - PURGE OCDB
   import ocdb/utils/checks
-  import ocdb/utils/generic-components
+  ; import ocdb/utils/generic-components
 
+defn board-def (outline:Shape, signal-shrink:Maybe<Double> = None()):
+  pcb-board board-def-pcb:
+    stackup = jlc-pcb/stackups/JLC04161H-7628/stackup
+    boundary = outline
+    match(signal-shrink):
+      (_:None): false
+      (given:One<Double>):
+        val shrink = value(given)
+        ensure-positive!("signal-shrink", shrink)
+        signal-boundary = expand(outline, (- shrink))
+    vias = [
+      std-via-preferred, tented-filled-std-via
+    ]
+  board-def-pcb
 ; ============
 ; setup-design
 ; ============
-; TODO - Add Docstrings Here for function
-public defn setup-design (name:String, board:Board
-                          --
-                          rules:Rules = ocdb/utils/defaults/default-rules
-                          vendors:Tuple<String|AuthorizedVendor> = ocdb/utils/design-vars/APPROVED-DISTRIBUTOR-LIST
-                          quantity:Int = ocdb/utils/design-vars/DESIGN-QUANTITY
-                          bom-columns:Tuple<BOMColumn> = ocdb/utils/design-vars/BOM-COLUMNS) :
+doc: \<DOC>
+Setup the Board Definition
+
+@param name Names the current design. This will define the name shown
+in the drop down of the schematic and board visualizer.
+@param outline Shape of the board.
+@param signal-shrink
+<DOC>
+public defn setup-board (name:String, outline:Shape -- signal-shrink:Double = ?):
   set-current-design(name)
-  set-board(board)
-  ; TODO - this needs to be replaced with the fab support JLCPCB library
-  set-rules(rules)
+
+  set-board(board-def(outline, signal-shrink))
+  set-rules(jlcpcb-rules-multi-1oz)
   ; TODO - We need to replace this with the new query api via the
   ;  `set-global-query-defaults!` function.
+  val vendors = jsl/design/settings/APPROVED-DISTRIBUTOR-LIST
   set-bom-vendors(vendors)
   ; TODO - Use `set-global-query-defaults!` value of `quantity-needed`
-  set-bom-design-quantity(quantity)
-  ; TODO - remove dependency on OCDB - define columns in this file.
+  set-bom-design-quantity(10)
+
+  val bom-columns = [
+    BOMColumn(BOMFieldStatus, "Status", 10.0)
+    BOMColumn(BOMFieldDescription, "Description", 10.0)
+    BOMColumn(BOMFieldInsts, "References", 10.0)
+    BOMColumn(BOMFieldDatasheet, "Datasheet", 10.0)
+    BOMColumn(BOMFieldManufacturer, "Manufacturer", 10.0)
+    BOMColumn(BOMFieldMPN, "Part Number", 10.0)
+    BOMColumn(BOMFieldQuantity, "Quantity", 8.0)
+    BOMColumn(BOMFieldPrice, "Price", 8.0)
+    BOMColumn(BOMFieldPreferred, "Preferred", 8.0)
+  ]
   set-bom-columns(bom-columns)
 
   set-paper(ANSI-B)
-  set-export-backend(`kicad) 
+  set-export-backend(`kicad)
 
 ; =====================
 ; Run the design checks
@@ -67,8 +100,3 @@ public defn update-design () :
   set-export-board?(false)
   export-to-cad()
 
-; =================
-; Export BOM to tsv
-; =================
-public defn export-bill-of-materials () :
-  export-bom()
