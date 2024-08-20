@@ -77,7 +77,7 @@ public pcb-module circuit (therm-via:Via):
   )
 
   inst resonator : resonator-type
-
+  net (resonator.COMMON, GND)
   net (resonator.p[1], netsw.C.XI)
   ; Add a series resistor for dampening if needed.
   inst R-xtal-series : create-resistor(resistance = 0.0, precision = (1 %))
