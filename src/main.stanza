@@ -46,7 +46,7 @@ pcb-module top-level :
   val rmii-cst = RMII-Constraint(jlc-pcb/stackups/JLC04161H-7628/se-50())
   constrain-topology(controller.mii => netsw.mii, rmii-cst)
 
-  net (controller.mdio, netsw.management)
+  net MIIM (controller.mdio, netsw.management)
 
   ; Array Stuff
 
@@ -61,7 +61,7 @@ setup-board("ethernet-io", board-shape, signal-shrink = 0.5)
 set-main-module(top-level)
 
 ; View the results
-view-design-explorer()
+; view-design-explorer()
 ; view-bom(BOM-STD)
 view-schematic()
 view-board()
