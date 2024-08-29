@@ -11,7 +11,7 @@ defpackage ethernet-io/network-switch:
   import jsl/pin-assignment
   import jsl/design/introspection
 
-  ; import jsl/landpatterns/thermal-vias
+  import jsl/landpatterns/thermal-vias
   import jsl/landpatterns/framework
 
   import jsl/protocols/ethernet/MDI/MDI-1000Base-T
@@ -19,33 +19,25 @@ defpackage ethernet-io/network-switch:
   import jsl/protocols/ethernet/MII/MIIM
 
   import jsl/circuits/CrystalResonator
-  import power-systems/filters
+  import power-systems
 
 val rmii-bus = rmii(add-rx-error = false)
 
 
 public pcb-module circuit (therm-via:Via):
+
   port VDD-1v2 : power
   port VDD-3v3 : power
+
   port mii : rmii-bus
   port management : miim
+
 
   public inst netsw : ethernet_io_lib/components/KSZ9563/module
 
   net (VDD-3v3, netsw.rail-IO)
   net (VDD-1v2, netsw.rail-1v2)
   net GND (VDD-3v3.V-, netsw.C.PAD)
-
-  ; val tv-g = GridThermalVias(
-  ;   via-def = therm-via,
-  ;   grid-def = GridPlanner(
-  ;     pitch = 1.2,
-  ;     columns = 6,
-  ;     rows = 6
-  ;   )
-  ; )
-
-  ; make-via-grid(tv-g, netsw.C.PAD)
 
   ;; ---- Power ----
 
@@ -62,6 +54,17 @@ public pcb-module circuit (therm-via:Via):
   net (VDD-1v2, filt-1v2.vin)
   net (filt-1v2.vout, netsw.rail-analog-1v2)
 
+  ; ------- Via Grid -----------
+  val tv-g = GridThermalVias(
+    via-def = therm-via,
+    grid-def = GridPlanner(
+      pitch = 1.2,
+      columns = 6,
+      rows = 6
+    )
+  )
+
+  make-via-grid(tv-g, netsw.C.PAD)
 
   ;; ---- Crystal ----
   ;  25MHz +/- 50ppm
@@ -80,11 +83,11 @@ public pcb-module circuit (therm-via:Via):
   net (resonator.COMMON, GND)
   net (resonator.p[1], netsw.C.XI)
   ; Add a series resistor for dampening if needed.
-  inst R-xtal-series : create-resistor(resistance = 0.0, precision = (1 %))
-  net (resonator.p[2], R-xtal-series.p[1])
-  net (R-xtal-series.p[2], netsw.C.XO)
-  short-trace(R-xtal-series.p[2], netsw.C.XO)
-
+  val R = insert-resistor(
+    resonator.p[2], netsw.C.XO,
+    resistance = 0.0,
+    precision = (1 %)
+  )
 
   ;; ---- Configuration Straps ------
 
@@ -114,9 +117,9 @@ public pcb-module circuit (therm-via:Via):
   ;  to the ethernet MDIs
   val esd-tmp = CircuitTemplate(
     ethernet_io_lib/components/ESD224DQAR/device, [
-    BundleStack(dual-pair, 2),
-    BundleStack(pass-through, 4)
-  ], name = "esd")
+      BundleStack(dual-pair, 2),
+      BundleStack(pass-through, 4)
+    ], name = "esd")
 
   val pool-type = create-circuit-pool(esd-tmp, 4)
   inst esd : pool-type
@@ -135,6 +138,7 @@ public pcb-module circuit (therm-via:Via):
     within [src, dst] = constrain-topology(MDI => conn-IF, mdi-constraint):
       require prot-MDI : dual-pair[NUM_PAIRS_1000Base-T] from esd
 
+      topology MDI (src.TP => dst.TP)
       for i in 0 to NUM_PAIRS_1000Base-T do:
         topo-pair(src.TP[i] => prot-MDI[i].A => prot-MDI[i].B  => dst.TP[i])
 
@@ -163,7 +167,6 @@ public pcb-module circuit (therm-via:Via):
     net (led-y.c, netsw.C.LED0[i])
 
   ;;  ----  RMII Setup ------
-  ; The following
   require sw-bus : rmii-bus from netsw
 
   ; This inserts series resistors between the
@@ -179,6 +182,7 @@ public pcb-module circuit (therm-via:Via):
     topo-net(sw-bus.txd[i], mii.txd[i])
 
   val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0603"])
+  ; pin-model(series-R-type.p[1], series-R-type.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
 
   for i in 0 to length(sw-bus.rxd) do:
     inst dampener : series-R-type

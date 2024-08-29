@@ -6,9 +6,386 @@ defpackage ethernet-io/power:
   import jitx/parts/query-api
 
   import jsl/bundles
+  import jsl/errors
   import jsl/symbols/net-symbols
+  import jsl/design/E-Series
+  import jsl/design/introspection
+  import jsl/circuits/Network
+  import jsl/utils
 
-  import power-systems/filters
+  import power-systems
+  import voltage-divider
+  import inductors/specs
+
+
+public defn compute-24V-to-5V-solution (cst:BuckConstraints) -> [BuckSolution, Instantiable]:
+
+  val L-val = compute-L(cst)
+  ; println("L: %_" % [L-val])
+
+  ; Select from a known series
+  val L-nH = to-nH(typ(L-val))
+  val series = inductors/components/NRS5040/NRS5040-specs
+  val [L-in-series, specs] = unpack $ get-ceil-specs(L-nH, series)
+  val L-type = inductors/components/NRS5040/component(L-in-series)
+  val L = to-H(L-in-series)
+  ; println("Spec'd Inductor: %_ Inductance: %_" % [mpn?(L-type), L])
+
+  val I-peak = compute-peak-current(cst, L)
+  println("I-peak: %_" % [I-peak])
+
+  ; TODO - check I-peak here.
+  val I-margin = (30 %)
+  val I-peak-check = I-peak * I-margin
+  ; if not (property(L-type.rated-current) > I-peak-check):
+
+  val min-C-out = compute-min-C-out(cst, L)
+
+  ; Per datasheet - there is an additional multiple on typical output capacitance
+  val dc = typ $ duty-cycle(cst)
+  val K = value $ K(cst)
+  val coeff = ((1.0 - dc) * (1.0 + K)) + ((K * K / 12.0) * (2.0 - dc))
+  val C-out-calc = min-C-out * coeff
+
+  ; Datasheet suggests at least 20uF of bulk capacitance
+  val min-bulk-cap = 20.0e-6
+  val C-out = max(min-bulk-cap, C-out-calc)
+
+  val C-in = compute-min-C-in(cst)
+
+  [BuckSolution(L, C-in, C-out), L-type]
+
+public pcb-module DCDC-24V-to-5V (vin:Toleranced) :
+  port VIN : power
+  port VOUT : power
+
+  ; DC / DC 24V -> 5V
+  ; CJA - PD-Audio has a DC/DC we can use to not start from scratch
+  ;  Power library
+  ; inst DCDC-5v : asdf
+  ; Connect to `VDD-5v.V+`
+
+  val buck-5V-cst = BuckConstraints(
+    v-in = min-max(20.0, 28.0),
+    v-out = 5.0 +/- (2 %)
+    v-in-ripple-max = 0.050
+    v-out-ripple-max = 0.030
+    ; TODO - We should make this generated from
+    ;   the components, and the efficiency estimates
+    ;   for the other DC/DC components
+    i-out = 1.0 +/- (20 %)
+    freq = 1.2e6
+    K = (40 %)
+  )
+
+  val [buck-sol, L-type] = compute-24V-to-5V-solution(buck-5V-cst)
+
+  println("24V -> 5V Buck Solution: %_" % [buck-sol])
+
+  ; Planning for the number of capacitor placements
+  val num-out-caps = 2
+  val num-in-caps = 2
+
+  inst IC : TI-vreg/components/TPS6293x/device(
+     TI-vreg/components/TPS6293x/TPS62932DRL,
+    freq = 1.2e6,
+    SS-period = 10.0e-3 +/- 2.0e-3,
+    UVLO = [15.0, 12.0]
+    )
+
+  net (VIN.V+, IC.SW.VIN)
+  net GND (VIN.V-, VOUT.V-, IC.SW.GND)
+
+  ; Voltage Margin on the Capacitors
+  val V-margin = (30 %)
+
+  val base-Q = CapacitorQuery(
+    type = "ceramic",
+    temperature-coefficient_code = "X7R"
+  )
+
+  val C-series = E12()
+
+  ; Input Capacitance
+  val vin-max = max-value $ v-in(buck-5V-cst)
+  val C-in-val = find-ceil(C-series, C-in(buck-sol) / to-double(num-in-caps))
+
+  val C-in-type = Elem $ create-capacitor(
+    base-Q
+    capacitance = C-in-val,
+    precision = precision(C-series)
+    rated-voltage = AtLeast(vin-max * V-margin)
+  )
+
+  ; Output Capacitance
+  val vout-max = max-value $ v-out(buck-5V-cst)
+
+  val C-out-val = find-ceil(C-series, C-out(buck-sol) / to-double(num-out-caps))
+  val C-out-bulk = Elem $ create-capacitor(
+    base-Q
+    capacitance = C-out-val,
+    precision = precision(C-series)
+    rated-voltage = AtLeast(vout-max * V-margin)
+  )
+
+  ; Per Datasheet - smaller capacitor for noise considerations
+  val C-out-filt = Elem $ create-capacitor(
+    base-Q
+    capacitance = 4.7e-9,
+    precision = (5 %)
+    rated-voltage = AtLeast(vout-max * V-margin)
+  )
+
+  ; Bootstrap
+  val C-bst = Elem $ create-capacitor(
+    base-Q
+    capacitance = 0.1e-6,
+    precision = (10 %)
+    rated-voltage = AtLeast(vin-max * V-margin)
+  )
+
+  val R-damp = Elem $ create-resistor(
+    resistance = 0.0,
+    precision = (1 %)
+  )
+
+  ; Construct the Buck Converter with a Generator
+
+  val buck = BuckArchitecture(
+    cin = Parallel(repeat(C-in-type, num-in-caps)),
+    cout = C-out-filt | Parallel(repeat(C-out-bulk, num-out-caps)),
+    coil = L-type,
+    bst? = One $ (C-bst + R-damp)
+  )
+
+  val outputs = make-circuit(buck, IC.buck)
+  val vout-port = value(outputs[0])
+  net (vout-port, self.VOUT.V+)
+
+  ; Finally - construct the feedback divider
+  val fb-cst = InverseDividerConstraints(
+    ; Input is the voltage reference of the
+    ;   converter
+    v-in = property(IC.SW.V-REF)
+    v-out = v-out(buck-5V-cst)
+    current = 100.0e-6
+  )
+
+  val fb-div-type = voltage-divider(fb-cst, name? = One $ "fb-5V")
+  inst fb-div : fb-div-type
+  net (fb-div.hi, vout-port)
+  net (fb-div.out, IC.SW.FB)
+  net (fb-div.lo, GND)
+
+  ; Apply a cap accross the high side resistor as a
+  ;  hedge in case we need to tune the control loop
+  val C-fb = insert-capacitor(
+    fb-div.hi, fb-div.out
+    base-Q,
+    capacitance = 10.0e-12
+    precision = (10 %)
+    rated-voltage = AtLeast(typ(v-out(buck-5V-cst)) * V-margin)
+  )
+  ; Doesn't show in Schematic
+  ; do-not-populate(C-fb)
+  instance-status(C-fb):
+    bom-status = NotInBOM
+
+
+public pcb-module DCDC-5V-to-3v3:
+
+  port VIN : power
+  port VOUT : power
+
+  port enable
+  port power-good
+
+  inst IC : TI-vreg/components/TPS6208x/device(
+    TI-vreg/components/TPS6208x/TPS62082DSG
+    snooze-mode = false
+    snooze-conn? = One $ create-resistor(
+        resistance = 0.0,
+        precision = (1 %)
+      )
+    )
+  net (VIN.V+, IC.SW.VIN)
+  net GND (VIN.V-, VOUT.V-, IC.SW.GND)
+  net (enable, IC.SW.EN)
+  net (IC.SW.PG, power-good)
+
+  ; Datasheet represents a suggested solution, which we will use
+  ;  without changes.
+  val sol-3v3 = TI-vreg/components/TPS6208x/MFR-Suggested-Solution()
+
+  ;
+  val vin-max = 6.0
+  val vout-max = 3.3
+  ; Voltage Margin on the Capacitors
+  val V-margin = (30 %)
+
+
+  val C-series = E12()
+  val base-Q = CapacitorQuery(
+    type = "ceramic",
+    temperature-coefficient_code = "X7R"
+    precision = precision(C-series)
+  )
+
+  val C-in-type = create-capacitor(
+    base-Q
+    capacitance = C-in(sol-3v3),
+    rated-voltage = AtLeast(vin-max * V-margin)
+  )
+
+  val C-out-filt = Elem $ create-capacitor(
+    base-Q
+    capacitance = 4.7e-9,
+    rated-voltage = AtLeast(vout-max * V-margin)
+  )
+
+  val C-out-bulk = Elem $ create-capacitor(
+    base-Q
+    capacitance = C-out(sol-3v3),
+    rated-voltage = AtLeast(vout-max * V-margin)
+  )
+
+  val L-nH = to-nH(L(sol-3v3))
+  val series = inductors/components/XFL3012/XFL3012-specs
+  val [L-in-series, specs] = unpack $ get-specs(L-nH, series)
+  val L-type = inductors/components/XFL3012/component(L-in-series)
+  val L = to-H(L-in-series)
+
+
+  val buck = BuckArchitecture(
+    cin = C-in-type,
+    cout = C-out-filt | C-out-bulk,
+    coil = L-type,
+  )
+
+  val outputs = make-circuit(buck, IC.buck)
+  val vout-port = value(outputs[0])
+  net (vout-port, self.VOUT.V+, IC.SW.VOS)
+
+  ; Construct a voltage divider for the feedback.
+  ;   Note that we're using the 3.3V fixed version
+  ;   so we don't have to populate this. It is a
+  ;   hedge in the case we can't source the fixed
+  ;   version or want to use two adjustables for
+  ;   BOM optimization.
+  val fb-cst = InverseDividerConstraints(
+    ; Input is the voltage reference of the
+    ;   converter
+    v-in = property(IC.SW.V-REF)
+    v-out = 3.3 +/- (5 %)
+    current = 100.0e-6
+  )
+
+  val fb-div-type = voltage-divider(fb-cst, name? = One $ "fb-3V3")
+  inst fb-div : fb-div-type
+  net (fb-div.hi, vout-port)
+  net (fb-div.out, IC.SW.FB)
+  net (fb-div.lo, GND)
+
+  for ci in component-instances(fb-div) do:
+    instance-status(ci):
+      bom-status = NotInBOM
+
+
+public pcb-module DCDC-5V-to-1v2:
+
+  port VIN : power
+  port VOUT : power
+  port enable
+  port power-good
+
+  inst IC : TI-vreg/components/TPS6208x/device(
+    TI-vreg/components/TPS6208x/TPS62080DSG
+    snooze-mode = false
+    snooze-conn? = One $ create-resistor(
+        resistance = 0.0,
+        precision = (1 %)
+      )
+    )
+  net (VIN.V+, IC.SW.VIN)
+  net GND (VIN.V-, VOUT.V-, IC.SW.GND)
+
+  net (enable, IC.SW.EN)
+  net (IC.SW.PG, power-good)
+
+
+  ; Datasheet represents a suggested solution, which we will use
+  ;  without changes.
+  val sol-1v2 = TI-vreg/components/TPS6208x/MFR-Suggested-Solution()
+
+  ;
+  val vin-max = 6.0
+  val vout-max = 1.2
+  ; Voltage Margin on the Capacitors
+  val V-margin = (30 %)
+
+
+  val C-series = E12()
+  val base-Q = CapacitorQuery(
+    type = "ceramic",
+    temperature-coefficient_code = "X7R"
+    precision = precision(C-series)
+  )
+
+  val C-in-type = create-capacitor(
+    base-Q
+    capacitance = C-in(sol-1v2),
+    rated-voltage = AtLeast(vin-max * V-margin)
+  )
+
+  val C-out-filt = Elem $ create-capacitor(
+    base-Q
+    capacitance = 4.7e-9,
+    rated-voltage = AtLeast(vout-max * V-margin)
+  )
+
+  val C-out-bulk = Elem $ create-capacitor(
+    base-Q
+    capacitance = C-out(sol-1v2),
+    rated-voltage = AtLeast(vout-max * V-margin)
+  )
+
+  val L-nH = to-nH(L(sol-1v2))
+  val series = inductors/components/XFL3012/XFL3012-specs
+  val [L-in-series, specs] = unpack $ get-specs(L-nH, series)
+  val L-type = inductors/components/XFL3012/component(L-in-series)
+  val L = to-H(L-in-series)
+
+
+  val buck = BuckArchitecture(
+    cin = C-in-type,
+    cout = C-out-filt | C-out-bulk,
+    coil = L-type,
+  )
+
+  val outputs = make-circuit(buck, IC.buck)
+  val vout-port = value(outputs[0])
+  net (vout-port, self.VOUT.V+, IC.SW.VOS)
+
+  ; Construct a voltage divider for the feedback.
+  ;   Note that we're using the 3.3V fixed version
+  ;   so we don't have to populate this. It is a
+  ;   hedge in the case we can't source the fixed
+  ;   version or want to use two adjustables for
+  ;   BOM optimization.
+  val fb-cst = InverseDividerConstraints(
+    ; Input is the voltage reference of the
+    ;   converter
+    v-in = property(IC.SW.V-REF)
+    v-out = 1.2 +/- (5 %)
+    current = 100.0e-6
+  )
+
+  val fb-div-type = voltage-divider(fb-cst, name? = One $ "fb-1V2")
+  inst fb-div : fb-div-type
+  net (fb-div.hi, vout-port)
+  net (fb-div.out, IC.SW.FB)
+  net (fb-div.lo, GND)
+
 
 doc: \<DOC>
 Construct the power sub-system of the design.
@@ -28,13 +405,16 @@ public pcb-module power-mng:
   port VDD-3v3 : power
   port VDD-1v2 : power
 
+  port power-good
+
   net GND (VIN.V-, VUSB-in.V-, VDD-1v2.V-, VDD-3v3.V-, VDD-5v.V-)
 
   ; DC / DC 24V -> 5V
-  ; CJA - PD-Audio has a DC/DC we can use to not start from scratch
-  ;  Power library
-  ; inst DCDC-5v : asdf
-  ; Connect to `VDD-5v.V+`
+  inst DCDC-5V : DCDC-24V-to-5V(min-max(20.0, 28.0))
+
+  net (VIN, DCDC-5V.VIN)
+  net VDD-5V-LOC (DCDC-5V.VOUT.V+)
+  symbol(VDD-5V-LOC) = PWR-SYMB
 
   ; Diode OR
   ;   DC/DC 5V -----┐
@@ -43,25 +423,57 @@ public pcb-module power-mng:
   val diode-type = create-resistor(resistance = 1.0e3, precision = (1 %))
   inst USB-OR : diode-OR(diode-type, 2)
   net (USB-OR.vin[0], VUSB-in)
-  net (USB-OR.vin[1], VDD-5v)
+  net (USB-OR.vin[1], DCDC-5V.VOUT)
 
-  net VDD-USB (USB-OR.vout.V+)
-  symbol(VDD-USB) = PWR-SYMB
+  net VDD-5V (USB-OR.vout.V+)
+  symbol(VDD-5V) = PWR-SYMB
 
-  ;
-  ; Duncan
+  net (VDD-5v, USB-OR.vout)
+
   ; DC/DC 5V -> 3.3V
-  ; inst DCDC-3v3 : asdf
+  inst DCDC-3v3 : DCDC-5V-to-3v3
+  net (USB-OR.vout, DCDC-3v3.VIN)
+  net (DCDC-3v3.VOUT, VDD-3v3)
 
   net VDD-3v3-n (VDD-3v3.V+)
   symbol(VDD-3v3-n) = PWR-SYMB
 
-
-
-  ; Duncan
   ; DC/DC 5V -> 1.2V
-  ; inst DCDC-1v2 : asdf
-
+  inst DCDC-1v2 : DCDC-5V-to-1v2
+  net (USB-OR.vout, DCDC-1v2.VIN)
+  net (DCDC-1v2.VOUT, VDD-1v2)
   net VDD-1v2-n (VDD-1v2.V+)
   symbol(VDD-1v2-n) = PWR-SYMB
 
+  ; Power Sequencing on Startup
+  ;  Per the KSZ9563's datasheet, Section 648, Note 1
+  ;  Because we share 3.3V for the AVDDH and the VDDIO,
+  ;  we want to bring up the core 1.2V first and then
+  ;  the 3.3V rail.
+  ;
+
+  ; Enable the 1.2V on the VIN
+
+  net (DCDC-1v2.enable, USB-OR.vout.V+)
+
+  ; Power Good for 1.2V is referenced from 5V
+  ;  to be sure that we can drive the voltage
+  ;  threshold for the other DC/DC's enable.
+  insert-resistor(
+    USB-OR.vout.V+, DCDC-1v2.power-good,
+    resistance = 10.0e3
+    precision = (5 %)
+  )
+
+  net (DCDC-1v2.power-good, DCDC-3v3.enable)
+
+  ; Add a pullup to 3.3V rail for the
+  ;  Power good so that we can feed to both
+  ;  the reset logic and to the MCU's IO.
+  insert-resistor(
+    VDD-3v3-n, DCDC-3v3.power-good,
+    resistance = 10.0e3
+    precision = (5 %)
+  )
+
+  net (DCDC-3v3.power-good, power-good)
