@@ -420,7 +420,7 @@ public pcb-module power-mng:
   ;   DC/DC 5V -----┐
   ;   VUSB-in  -----|----- 5V
 
-  val diode-type = create-resistor(resistance = 1.0e3, precision = (1 %))
+  val diode-type = ethernet_io_lib/components/SSA33L/component
   inst USB-OR : diode-OR(diode-type, 2)
   net (USB-OR.vin[0], VUSB-in)
   net (USB-OR.vin[1], DCDC-5V.VOUT)
