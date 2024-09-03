@@ -185,8 +185,7 @@ public pcb-module DCDC-24V-to-5V (vin:Toleranced) :
     precision = (10 %)
     rated-voltage = AtLeast(typ(v-out(buck-5V-cst)) * V-margin)
   )
-  ; Doesn't show in Schematic
-  ; do-not-populate(C-fb)
+
   instance-status(C-fb):
     bom-status = NotInBOM
 
