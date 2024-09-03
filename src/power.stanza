@@ -107,10 +107,11 @@ public pcb-module DCDC-24V-to-5V (vin:Toleranced) :
   ; Input Capacitance
   val vin-max = max-value $ v-in(buck-5V-cst)
   val C-in-val = find-ceil(C-series, C-in(buck-sol) / to-double(num-in-caps))
-
+  val C-in-max = find-ceil(C-series, 1.1 * C-in-val)
+  println("CinVal: %_ Max: %_" % [C-in-val, C-in-max])
   val C-in-type = Elem $ create-capacitor(
     base-Q
-    capacitance = C-in-val,
+    capacitance = min-max(C-in-val, C-in-max)
     precision = precision(C-series)
     rated-voltage = AtLeast(vin-max * V-margin)
   )
