@@ -59,15 +59,13 @@ public pcb-module DCDC-24V-to-5V (vin:Toleranced) :
   port VIN : power
   port VOUT : power
 
-  ; DC / DC 24V -> 5V
-  ; CJA - PD-Audio has a DC/DC we can use to not start from scratch
-  ;  Power library
-  ; inst DCDC-5v : asdf
-  ; Connect to `VDD-5v.V+`
-
+  ; DC / DC 24V -> 5.5V
+  ;  We are outputing slightly above 5.0V so that
+  ;  when self-powering with USB connected, the internal 24V->5V DC/DC
+  ;  wins and powers the board instead of USB.
   val buck-5V-cst = BuckConstraints(
     v-in = min-max(20.0, 28.0),
-    v-out = 5.0 +/- (2 %)
+    v-out = 5.5 +/- (2 %)
     v-in-ripple-max = 0.050
     v-out-ripple-max = 0.030
     ; TODO - We should make this generated from
