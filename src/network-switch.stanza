@@ -184,27 +184,9 @@ public pcb-module circuit (therm-via:Via):
   val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0603"])
   ; pin-model(series-R-type.p[1], series-R-type.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
 
-  for i in 0 to length(sw-bus.rxd) do:
-    inst dampener : series-R-type
-    topo-net(sw-bus.rxd[i] => dampener.p[1])
-    topo-net(dampener.p[2] => mii.rxd[i])
-    short-trace(sw-bus.rxd[i], dampener.p[1])
-    pin-model(dampener.p[1], dampener.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
-
-  inst dv-damp : series-R-type
-  topo-net(sw-bus.crs-dv => dv-damp.p[1])
-  topo-net(dv-damp.p[2] => mii.crs-dv)
-  short-trace(sw-bus.crs-dv, dv-damp.p[1])
-  pin-model(dv-damp.p[1], dv-damp.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
-
-  ; Clock Mode - this means that
-  ;   the `KSZ9563` is generating the clock
-  ;   to drive the MAC on the microcontroller
-  inst clk-damp : series-R-type
-  topo-net(sw-bus.ref-clk => clk-damp.p[1])
-  topo-net(clk-damp.p[2] => mii.ref-clk)
-  short-trace(sw-bus.ref-clk, clk-damp.p[1])
-  pin-model(clk-damp.p[1], clk-damp.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
+  val rx-bus = [sw-bus.rxd, sw-bus.crs-dv, sw-bus.ref-clk]
+  val rx-out = [mii.rxd, mii.crs-dv, mii.ref-clk]
+  topo-bus(rx-bus => series-R-type => rx-out)
 
   ; We need to set signal ends here because the series
   ;  resistors will present a problem when attempting to
