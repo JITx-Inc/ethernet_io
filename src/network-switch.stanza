@@ -18,6 +18,8 @@ defpackage ethernet-io/network-switch:
   import jsl/protocols/ethernet/MII/RMII
   import jsl/protocols/ethernet/MII/MIIM
 
+  import jsl/si/bus
+
   import jsl/circuits/CrystalResonator
   import power-systems
 
