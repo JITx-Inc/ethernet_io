@@ -18,8 +18,6 @@ defpackage ethernet-io/network-switch:
   import jsl/protocols/ethernet/MII/RMII
   import jsl/protocols/ethernet/MII/MIIM
 
-  import jsl/si/bus
-
   import jsl/circuits/CrystalResonator
   import power-systems
 
@@ -179,9 +177,7 @@ public pcb-module circuit (therm-via:Via):
   ; These signals are inputs and do not require the
   ;   series resistor - The MAC side on the microcontroller
   ;   will provide dampening resistors near its transmitter.
-  topo-net(sw-bus.tx-en, mii.tx-en)
-  for i in 0 to length(sw-bus.txd) do:
-    topo-net(sw-bus.txd[i], mii.txd[i])
+  topo-bus([sw-bus.tx-en, sw-bus.txd] => [mii.tx-en, mii.txd])
 
   val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0603"])
   ; pin-model(series-R-type.p[1], series-R-type.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
