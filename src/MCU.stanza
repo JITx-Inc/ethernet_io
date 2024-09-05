@@ -32,26 +32,14 @@ public pcb-module circuit:
 
   require mii-bus:rmii-bus from mcu
 
-  topo-net(mii-bus.crs-dv => mii.crs-dv)
-  topo-net(mii-bus.ref-clk => mii.ref-clk)
-  for i in 0 to length(mii-bus.rxd) do:
-    topo-net(mii-bus.rxd[i] => mii.rxd[i])
+  topo-bus([mii-bus.crs-dv, mii-bus.ref-clk, mii-bus.rxd] => [mii.crs-dv, mii.ref-clk, mii.rxd])
 
   ; Create Series resistor
   val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0603"])
 
-  for i in 0 to length(mii-bus.txd) do:
-    inst dampener : series-R-type
-    topo-net(mii-bus.txd[i] => dampener.p[1] )
-    topo-net(dampener.p[2] => mii.txd[i] )
-    short-trace(dampener.p[1], mii-bus.txd[i])
-    pin-model(dampener.p[1], dampener.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
-
-  inst tx-en-dampener : series-R-type
-  topo-net(mii-bus.tx-en => tx-en-dampener.p[1])
-  topo-net(tx-en-dampener.p[2] => mii.tx-en)
-  short-trace(tx-en-dampener.p[1], mii-bus.tx-en)
-  pin-model(tx-en-dampener.p[1], tx-en-dampener.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
+  val tx-bus = [mii-bus.txd, mii-bus.tx-en]
+  val tx-out = [mii.txd, mii.tx-en]
+  topo-bus(ShortTrace(tx-bus => series-R-type) => tx-out)
 
   ; Set signal ends so we get the right routing
   ;    structure all the way to the pin.
