@@ -184,7 +184,7 @@ public pcb-module circuit (therm-via:Via):
 
   val rx-bus = [sw-bus.rxd, sw-bus.crs-dv, sw-bus.ref-clk]
   val rx-out = [mii.rxd, mii.crs-dv, mii.ref-clk]
-  topo-bus(ShortTrace(rx-bus => series-R-type) => rx-out)
+  topo-bus(ShortTrace(rx-bus => series-R-type => rx-out))
 
   ; We need to set signal ends here because the series
   ;  resistors will present a problem when attempting to
