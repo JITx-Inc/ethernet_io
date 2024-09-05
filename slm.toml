@@ -1,14 +1,18 @@
 name = "ethernet_io"
 version = "0.1.0"
 [dependencies]
-jsl = { path = "libs/jsl"}
-connectors = { path = "libs/connectors"}
-voltage-divider = { path = "libs/voltage-divider" }
-power-systems = { path = "libs/power-systems"}
-ethernet_io_lib = { path = "libs/ethernet_io_lib"}
-inductors = { path = "libs/inductors" }
-jlc-pcb = {path = "libs/jlc-pcb"}
-stmicro = {path = "libs/stmicro"}
-TI-vreg = { path = "libs/TI-VREG" }
+# jsl = { git = "JITx-Inc/jsl", version = "0.5.1" }
+jsl = { path = "../jsl" }
+connectors = { git = "JITX-Inc/connectors", version = "0.1.0" }
+voltage-divider = { git = "JITX-Inc/voltage-divider", version = "0.2.0" }
+power-systems = { git = "JITX-Inc/power-systems", version = "0.2.0" }
+# ethernet_io_lib = { git = "JITX-Inc/ethernet_io_lib", version = "0.2.0" }
+ethernet_io_lib = { path = "../ethernet_io_lib" }
+inductors = { git = "JITX-Inc/inductors", version = "0.1.0" }
+jlc-pcb = { path = "../jlc-pcb" }
+stmicro = { git = "JITX-Inc/stmicro", version = "0.1.0" }
+# TI-vreg = { git = "JITX-Inc/TI-VREG", version = "" }
+TI-vreg = { path = "../TI-VREG" }
 JITX = { path = "{SLM_ROOT}/JITX" }
 ocdb = { path = "{SLM_ROOT}/ocdb" }
+microchip-networking = { git = "JITx-Inc/microchip-networking", version = "0.1.0" }
