@@ -33,7 +33,7 @@ public pcb-module circuit (therm-via:Via):
   port management : miim
 
 
-  public inst netsw : ethernet_io_lib/components/KSZ9563/module
+  public inst netsw : microchip-networking/components/KSZ9563/module
 
   net (VDD-3v3, netsw.rail-IO)
   net (VDD-1v2, netsw.rail-1v2)
