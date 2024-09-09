@@ -11,6 +11,10 @@ defpackage ethernet-io/MCU:
   import jsl/si
   import jsl/bundles
 
+  import jsl/circuits/CrystalResonator
+  import power-systems
+
+
 
 val rmii-bus = rmii(add-rx-error = false)
 
@@ -20,10 +24,19 @@ public pcb-module circuit:
   port rail-3v3 : power
   port mii : rmii-bus
   port mdio : miim
+  port dbg : jtag
+  port acm : uart-fc()
 
   public inst mcu : stmicro/components/STM32H723VGT6/module
 
   net (rail-3v3, mcu.rail-VDD)
+  net GND (rail-3v3.V-)
+
+  require mcu-dbg:jtag from mcu
+  net (mcu-dbg, dbg)
+
+  require mcu-uart:uart-fc() from mcu
+  net (mcu-uart, acm)
 
   ; setup the RMII interface - we want
   ;  to place resistors on the transmit pins
@@ -67,8 +80,40 @@ public pcb-module circuit:
   instance-status(pullup-mdc):
     bom-status = NotInBOM
 
-  ; TODO  - Add Ferrite for connecting VDD to VDA
+  ; Analog Interface
 
-  ;   net (rail-3v3, mcu.rail-VDDA)
+  val ferrite = ethernet_io_lib/components/ferrite/BLM18KG(220)
+  inst filt-3v3 : unbalanced-filter(ferrite)
+  net (rail-3v3, filt-3v3.vin)
+  net (filt-3v3.vout, mcu.rail-VDDA)
+
+  ;; ---- Crystal ----
+  ;  12MHz +/- 50ppm
+
+  val xtal-type = ethernet_io_lib/components/crystal/FA-238(12)
+
+  val resonator-type = create-crystal-resonator(
+    xtal-type = xtal-type,
+    C-load = typ(property(xtal-type.C-load))
+    ; From Datasheet Section 6.36.16, Table 51, Page 149
+    C-stray = typ(5.0e-12),
+    V-rating = 2.0 * 3.3 ; AVDDH
+  )
+
+  inst resonator : resonator-type
+  net (resonator.COMMON, GND)
+
+  require OSC:stmicro/bundles/high-freq-oscillator from mcu
+
+  net (resonator.p[1], OSC.out)
+  ; Add a series resistor for dampening if needed.
+  insert-resistor(
+    resonator.p[2], OSC.in,
+    resistance = 0.0,
+    precision = (1 %)
+  )
+
+
+
 
   ; TODO - USB interface
