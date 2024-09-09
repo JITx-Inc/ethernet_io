@@ -6,10 +6,12 @@ connectors = { path = "libs/connectors"}
 voltage-divider = { path = "libs/voltage-divider" }
 power-systems = { path = "libs/power-systems"}
 ethernet_io_lib = { path = "libs/ethernet_io_lib"}
+FTDI = { path = "libs/FTDI" }
 inductors = { path = "libs/inductors" }
 jlc-pcb = {path = "libs/jlc-pcb"}
 stmicro = {path = "libs/stmicro"}
 TI-vreg = { path = "libs/TI-VREG" }
 microchip-networking = { path = "libs/microchip-networking"}
+EEPROM = { path = "libs/EEPROM" }
 JITX = { path = "{SLM_ROOT}/JITX" }
 ocdb = { path = "{SLM_ROOT}/ocdb" }
