@@ -11,8 +11,12 @@ defpackage ethernet-io/main :
 
   import jlc-pcb/stackups/vias
 
+  import jsl/bundles
   import jsl/symbols/net-symbols
   import jsl/si
+  import jsl/circuits/Network
+
+  import power-systems
 
   import jsl/protocols/ethernet/MII/RMII
 
@@ -24,21 +28,53 @@ val board-shape = RoundedRectangle(170.0, 150.0, 0.25)
 ; Set the Global Query Defaults
 set-global-query-defaults!(min-stock = 1, mounting = "smd", case = ["0402", "0603", "0805", "1206"])
 
+defn create-reset-circuit () :
+  inside pcb-module:
+    val reset-sw = Elem $ ethernet_io_lib/components/tactile-sw/device
+    val pullup = Elem $ create-resistor(resistance = 10.0e3, precision = (1 %))
+    val diode = Elem $ ethernet_io_lib/components/SSA33L/component
+    val delay-cap = Elem $ create-capacitor(
+      capacitance = 10.0e-6,
+      precision = (10 %),
+      rated-voltage = AtLeast(2.0 * 3.3),
+      type = "ceramic",
+      temperature-coefficient_code = "X7R"
+      )
+    ; TODO - I want a way to control the reset of the network switch
+    ;   from the microcontroller.
+    val reset-circ-type = create-circuit( (diode | pullup) + Tap(`RESET_N, reset-sw | delay-cap))
+    inst reset-circ : reset-circ-type
+    reset-circ
+
+pcb-module PowerInConn :
+  port V24 : power
+
+  ; Use a 4 pole so that we can daisy chain power from one device to the next
+  ; ASSUMPTION: supplementary circuit prediction upstream of the device.
+  public inst TB : connectors/components/LSF-SMT/component(num-poles = 4)
+
+  net V24-n (TB.p[1], TB.p[2], V24.V+)
+  symbol(V24-n) = PWR-SYMB
+
+  net GND (TB.p[3], TB.p[4], V24.V-)
+  symbol(GND) = GND-SYMB
+
+
 ; Module to run as a design
 pcb-module top-level :
 
+  inst PWR : PowerInConn
   inst pwr-mng : power-mng
 
-  net V24 (pwr-mng.VIN.V+)
-  symbol(V24) = PWR-SYMB
-
-  net GND (pwr-mng.VIN.V-)
-  symbol(GND) = GND-SYMB
+  net (PWR.V24, pwr-mng.VIN)
 
   inst netsw : ethernet-io/network-switch/circuit(tented-filled-std-via)
 
-  net (pwr-mng.VDD-3v3, netsw.VDD-3v3)
-  net (pwr-mng.VDD-1v2, netsw.VDD-1v2)
+  net PWR-3v3 (pwr-mng.VDD-3v3, netsw.VDD-3v3)
+  net PWR-1v2 (pwr-mng.VDD-1v2, netsw.VDD-1v2)
+
+  property(PWR-3v3.voltage) = 3.3
+  property(PWR-1v2.voltage) = 1.2
 
   inst controller : ethernet-io/MCU/circuit
   net (pwr-mng.VDD-3v3, controller.rail-3v3)
@@ -48,12 +84,34 @@ pcb-module top-level :
 
   net MIIM (controller.mdio, netsw.management)
 
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Reset switch
+
+  val reset-circ = create-reset-circuit()
+  apply-power(reset-circ, pwr-mng.VDD-3v3)
+
+  require MCU-reset:reset from controller.mcu
+  net RESET_n (reset-circ.RESET_N, MCU-reset.reset, netsw.netsw.C.RESET_N)
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Debug Interface
+
+  inst debug-if : ethernet-io/DebugIF/circuit(jlc-pcb/stackups/JLC04161H-7628/diff-90())
+  net (debug-if.VDD-3v3, pwr-mng.VDD-3v3)
+  net (debug-if.VDD-USB, pwr-mng.VUSB-in)
+
+  net (debug-if.acm, controller.acm)
+  net (debug-if.dbg, controller.dbg)
+
+  net (debug-if.target-reset, RESET_n)
+
   ; Array Stuff
 
-  inst cls : ethernet-io/current-loop/current-loop[10]
+  ; inst cls : ethernet-io/current-loop/current-loop[10]
 
-  for i in 0 to length(cls) do:
-    net (GND, cls[i].pwr.V-)
+  ; for i in 0 to length(cls) do:
+  ;   net (GND, cls[i].pwr.V-)
 
 
 
