@@ -10,5 +10,6 @@ inductors = { path = "libs/inductors" }
 jlc-pcb = {path = "libs/jlc-pcb"}
 stmicro = {path = "libs/stmicro"}
 TI-vreg = { path = "libs/TI-VREG" }
+microchip-networking = { path = "libs/microchip-networking"}
 JITX = { path = "{SLM_ROOT}/JITX" }
 ocdb = { path = "{SLM_ROOT}/ocdb" }
