@@ -201,20 +201,19 @@ public pcb-module circuit (therm-via:Via):
   ;  compute from characteristics of netsw device IO and
   ;  forward voltage of the LED.
   val led-R-type = create-resistor(resistance = 330.0, precision = (1 %))
-
-  for i in 0 to length(eth-conn) do:
-
+  val LED-pts = [netsw.C.LED1, netsw.C.LED2]
+  for (i in 0 to length(eth-conn), LED-pt in LED-pts) do:
     inst g-R : led-R-type
     val led-g = eth-conn[i].LED-G
     net (g-R.p[1], VDD-3v3.V+)
     net (g-R.p[2], led-g.a)
-    net (led-g.c, netsw.C.LED0[i])
+    net (led-g.c, LED-pt[0])
 
     inst y-R : led-R-type
     val led-y = eth-conn[i].LED-Y
     net (y-R.p[1], VDD-3v3.V+)
     net (y-R.p[2], led-y.a)
-    net (led-y.c, netsw.C.LED0[i])
+    net (led-y.c, LED-pt[1])
 
   ;;  ----  RMII Setup ------
   require sw-bus : rmii-bus from netsw
