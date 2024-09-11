@@ -7,9 +7,12 @@ defpackage ethernet-io/network-switch:
 
   import jsl/bundles
   import jsl/si
-  import jsl/circuits/ConfigStrap
   import jsl/pin-assignment
-  import jsl/design/introspection
+
+  import jsl/circuits/ConfigStrap
+  import jsl/circuits/CrystalResonator
+  import jsl/circuits/Pullups
+  import jsl/circuits/Network
 
   import jsl/landpatterns/thermal-vias
   import jsl/landpatterns/framework
@@ -18,7 +21,6 @@ defpackage ethernet-io/network-switch:
   import jsl/protocols/ethernet/MII/RMII
   import jsl/protocols/ethernet/MII/MIIM
 
-  import jsl/circuits/CrystalResonator
   import power-systems
 
 val rmii-bus = rmii(add-rx-error = false)
@@ -32,6 +34,8 @@ public pcb-module circuit (therm-via:Via):
   port mii : rmii-bus
   port management : miim
 
+  port power-evt-n
+  port irq-n
 
   public inst netsw : microchip-networking/components/KSZ9563/module
 
@@ -91,22 +95,49 @@ public pcb-module circuit (therm-via:Via):
 
   ;; ---- Configuration Straps ------
 
-  val pullup-R = create-resistor(resistance = 100.0e3, precision = (1 %))
+  val pullup-R-t = create-resistor(resistance = 4.7e3, precision = (1 %))
   inst configs : ConfigStrap(
     num-elems = 4,
-    comp = pullup-R,
+    comp = pullup-R-t,
     pack? = One(LongitudinalPacking(margin = 0.2))
   )
+  net (configs.hi, VDD-3v3.V+)
   net (configs.lo, GND)
 
   require straps:config-strap-bus(4) from configs
 
-  net (straps.config[0], netsw.C.LED0[0])
-  net (straps.config[1], netsw.C.LED0[1])
-  net (straps.config[2], netsw.C.LED1[0])
-  net (straps.config[3], netsw.C.LED1[1])
+  net (straps.config[0], netsw.C.LED1[0])
+  net (straps.config[1], netsw.C.LED1[1])
+  net (straps.config[2], netsw.C.LED2[0])
+  net (straps.config[3], netsw.C.LED2[1])
 
-  ; TODO - RXD1 / RXD0 pull-low to use MIIM bus.
+  ; RXD0-3 have internal pull-downs
+  ; [RXD1, RXD0] => 00 => MIIM interface
+  ; [RXD3, RXD2] => 01 => RMII
+
+  insert-pullup(
+    netsw.C.RXD[2], VDD-3v3,
+    elem-type = pullup-R-t
+  )
+
+  ; PME_N must be pullup high to provide to enable
+  ;  Auto-negotiation.
+  insert-pullup(
+    netsw.C.PME_N, VDD-3v3,
+    elem-type = pullup-R-t
+  )
+  net (power-evt-n, netsw.C.PME_N)
+
+  insert-pullup(
+    netsw.C.INTRP_N, VDD-3v3,
+    elem-type = pullup-R-t
+  )
+  net (irq-n, netsw.C.INTRP_N)
+
+  ; These connections are not used in the MIIM
+  ;   management interface.
+  no-connect(netsw.C.SDO)
+  no-connect(netsw.C.SCS_N)
 
   ;; ---- RJ45 Connectors ------
 
