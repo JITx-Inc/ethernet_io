@@ -84,6 +84,8 @@ pcb-module top-level :
 
   net MIIM (controller.mdio, netsw.management)
 
+  net (netsw.irq-n, controller.switch-irq-n)
+  net (netsw.power-evt-n, controller.switch-pme-n)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Reset switch
@@ -91,8 +93,7 @@ pcb-module top-level :
   val reset-circ = create-reset-circuit()
   apply-power(reset-circ, pwr-mng.VDD-3v3)
 
-  require MCU-reset:reset from controller.mcu
-  net RESET_n (reset-circ.RESET_N, MCU-reset.reset, netsw.netsw.C.RESET_N)
+  net RESET_n (controller.reset-n, reset-circ.RESET_N, netsw.netsw.C.RESET_N)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Debug Interface
@@ -105,6 +106,7 @@ pcb-module top-level :
   net (debug-if.dbg, controller.dbg)
 
   net (debug-if.target-reset, RESET_n)
+  net (debug-if.bootloader-enable, controller.boot-ctl)
 
   ; Array Stuff
 
