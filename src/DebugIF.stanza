@@ -9,7 +9,8 @@ defpackage ethernet-io/DebugIF:
   import jsl/si
   import jsl/protocols/usb
   import jsl/circuits/Network
-  import jsl/circuits/utils
+  import jsl/circuits/Pullups
+  import jsl/circuits/Bypass
   import jsl/circuits/CrystalResonator
 
   import power-systems
@@ -54,22 +55,12 @@ pcb-module FTDI-EEPROM :
     precision = (1 %)
   )
 
-  val pu-R = create-resistor(
-    resistance = 10.0e3,
-    precision = (1 %)
-  )
-
-  inst R-CS : pu-R
-  add-pullup(R-CS, ROM.C.CS, VDD-3v3)
-
-  inst R-CLK : pu-R
-  add-pullup(R-CLK, ROM.C.CLK, VDD-3v3)
-
-  inst R-DO : pu-R
-  add-pullup(R-DO, ROM.C.DO, VDD-3v3)
-
-  inst R-ORG : pu-R
-  add-pullup(R-ORG, ROM.C.ORG, VDD-3v3)
+  insert-pullup(ROM.C.CS, VDD-3v3)
+  insert-pullup(ROM.C.CLK, VDD-3v3)
+  insert-pullup(ROM.C.DO, VDD-3v3)
+  ; ORG => 1
+  ;   Causes the EEPROM to use a 16-bit word.
+  insert-pullup(ROM.C.ORG, VDD-3v3)
 
 doc: \<DOC>
 Debug Interface providing JTAG and UART over USB
@@ -186,10 +177,8 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
   ; https://www.usb.org/sites/default/files/USB%20Type-C%20Spec%20R2.0%20-%20August%202019.pdf
   ; Don't pull a R-pi 4
   val pu-R = create-resistor(resistance = 5.1e3, precision = (1 %))
-  inst pd-CC : pu-R[2]
-  for i in 0 to length(pd-CC) do:
-    net (pd-CC[i].p[1], USBC.conn.bus.cc[i])
-    net (pd-CC[i].p[2], GND)
+  for i in indices(USBC.conn.bus.cc) do:
+    insert-pulldown(USBC.conn.bus.cc[i], GND, elem-type = pu-R)
 
   ; Need a signal-end here
   ; for i in 0 to length(USBC.conn.bus.sbu) do:

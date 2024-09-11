@@ -4,7 +4,7 @@ defpackage ethernet-io/main :
   import core
   import jitx
   import jitx/commands
-  import jitx/parts/query-api
+  import jitx/parts
 
   import ethernet-io/helpers
   import ethernet-io/power
