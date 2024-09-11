@@ -22,21 +22,39 @@ val rmii-bus = rmii(add-rx-error = false)
 public pcb-module circuit:
 
   port rail-3v3 : power
+
+  port reset-n
+
   port mii : rmii-bus
   port mdio : miim
+
+  port switch-irq-n
+  port switch-pme-n
+
   port dbg : jtag
   port acm : uart-fc()
+  port boot-ctl
+
 
   public inst mcu : stmicro/components/STM32H723VGT6/module
 
   net (rail-3v3, mcu.rail-VDD)
   net GND (rail-3v3.V-)
 
+  require MCU-reset:reset from mcu
+  net (reset-n, MCU-reset.reset)
+
   require mcu-dbg:jtag from mcu
   net (mcu-dbg, dbg)
 
   require mcu-uart:uart-fc() from mcu
   net (mcu-uart, acm)
+
+  require pme-n:gpio from mcu
+  net (switch-pme-n, pme-n.gpio)
+
+  require sw-irq-n:gpio from mcu
+  net (switch-irq-n, sw-irq-n.gpio)
 
   ; setup the RMII interface - we want
   ;  to place resistors on the transmit pins
@@ -114,6 +132,15 @@ public pcb-module circuit:
   )
 
 
+  ; BOOT0 - causes the microcontroller to enter bootloader
+  ;   mode on reset
 
+  ; Add a jumnper so that we can control this from USB but we can also
+  ;  disable it by removing the resistor if we are having trouble.
+  insert-resistor(boot-ctl, mcu.BOOT, resistance = 0.0, precision = (1 %))
 
-  ; TODO - USB interface
+  ; This switch allows us to manually force the bootloader sequence
+  ; on the microcontroller in the case we are not using the microcontroller.
+  inst boot-sw : ethernet_io_lib/components/tactile-sw/device
+  net (boot-sw.p[1], rail-3v3.V+)
+  net (boot-sw.p[2], mcu.BOOT)
