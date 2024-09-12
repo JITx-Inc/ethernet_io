@@ -89,7 +89,12 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
   port dbg : jtag
   port acm : uart-fc()
   port target-reset
+  ; Set High to force MCU to bootloader mode on
+  ;   reset.
+  ; During normal operation this should be force low.
   port bootloader-enable
+  ; Indicates that the debugger interface (FTDI) is active
+  port dbg-active
 
   net GND (VDD-3v3.V-, VDD-USB.V-)
 
@@ -152,6 +157,8 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
     precision = (1 %)
   )
 
+
+  net DBG-ACTIVE (dbg-active, ftdi.C.PWREN_n)
 
   ;; FTDI EEPROM
   inst eeprom : FTDI-EEPROM
