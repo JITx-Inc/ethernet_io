@@ -7,6 +7,7 @@ defpackage ethernet-io/DebugIF:
 
   import jsl/bundles
   import jsl/si
+  import jsl/pin-assignment
   import jsl/protocols/usb
   import jsl/circuits/Network
   import jsl/circuits/Pullups
@@ -115,22 +116,12 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
 
   ; Expose the UART and the JTAG to the system
   ;  so that we can use these for a debug/test interfaces
-  require acm-uart:uart-fc() from ftdi
-  net (acm, acm-uart)
 
-  require dbg-jtag:jtag from ftdi
-  net (dbg, dbg-jtag)
+  connect-require-ports(ftdi, [dbg, acm, bootloader-enable])
 
   require reset-ctl:gpio from ftdi
   ; TODO - make this an open-drain with a MOSFET.
   net (target-reset, reset-ctl.gpio)
-
-  ; Set High to force MCU to bootloader mode on
-  ;   reset.
-  ; During normal operation this should be force low.
-  require boot-en:gpio from ftdi
-  net (bootloader-enable, boot-en.gpio)
-
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; FTDI Crystal

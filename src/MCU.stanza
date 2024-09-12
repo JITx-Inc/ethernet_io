@@ -9,6 +9,7 @@ defpackage ethernet-io/MCU:
   import jsl/protocols/ethernet/MII/MIIM
 
   import jsl/si
+  import jsl/pin-assignment
   import jsl/bundles
 
   import jsl/circuits/CrystalResonator
@@ -41,20 +42,8 @@ public pcb-module circuit:
   net (rail-3v3, mcu.rail-VDD)
   net GND (rail-3v3.V-)
 
-  require MCU-reset:reset from mcu
-  net (reset-n, MCU-reset.reset)
-
-  require mcu-dbg:jtag from mcu
-  net (mcu-dbg, dbg)
-
-  require mcu-uart:uart-fc() from mcu
-  net (mcu-uart, acm)
-
-  require pme-n:gpio from mcu
-  net (switch-pme-n, pme-n.gpio)
-
-  require sw-irq-n:gpio from mcu
-  net (switch-irq-n, sw-irq-n.gpio)
+  connect-require-ports(mcu, [dbg, acm, reset-n], def-bundle = reset)
+  connect-require-ports(mcu, [switch-pme-n, switch-irq-n, dbg-active])
 
   ; setup the RMII interface - we want
   ;  to place resistors on the transmit pins
