@@ -35,7 +35,7 @@ public pcb-module circuit:
   port dbg : jtag
   port acm : uart-fc()
   port boot-ctl
-
+  port dbg-active
 
   public inst mcu : stmicro/components/STM32H723VGT6/module
 

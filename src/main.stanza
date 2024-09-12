@@ -84,8 +84,8 @@ pcb-module top-level :
 
   net MIIM (controller.mdio, netsw.management)
 
-  net (netsw.irq-n, controller.switch-irq-n)
-  net (netsw.power-evt-n, controller.switch-pme-n)
+  net SW_IRQ_N (netsw.irq-n, controller.switch-irq-n)
+  net SW_PME_N (netsw.power-evt-n, controller.switch-pme-n)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Reset switch
@@ -106,8 +106,8 @@ pcb-module top-level :
   net (debug-if.dbg, controller.dbg)
 
   net (debug-if.target-reset, RESET_n)
-  net (debug-if.bootloader-enable, controller.boot-ctl)
-
+  net BOOT_EN (debug-if.bootloader-enable, controller.boot-ctl)
+  net DBG_ACTIVE (debug-if.dbg-active, controller.dbg-active)
   ; Array Stuff
 
   ; inst cls : ethernet-io/current-loop/current-loop[10]
