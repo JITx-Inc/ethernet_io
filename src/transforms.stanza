@@ -1,0 +1,59 @@
+#use-added-syntax(jitx)
+defpackage ethernet-io/transforms:
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl/design/introspection
+  import jsl/symbols
+
+doc: \<DOC>
+Replace Schematic Symbols for Element Components
+
+2-pin Element components like resistors, capacitors, etc are often specified
+via the `jitx/parts` API. With this API, default symbols for the resistors and
+capacitors are generated but they can't be configured.
+
+This function can replace all element components by category with a
+new schematic symbol that is parameterizable.
+
+@param module Design module that we want to replace symbols on. It can be the
+top level or a sub-module. This transformation occurs recursively.
+@param cat-type Category type for matching components that will be transformed.
+This string is compared to the `property(component.category)` value to find matches.
+@param symb-type Schematic Symbol or Symbol Generator that will generate the new
+schematic symbol for this component.
+<DOC>
+public defn replace-element-symbols (module:Instantiable, cat-type:String, symb-type:SymbolDefn|SchematicSymbol) -> Instantiable :
+  val symb = match(symb-type):
+    (s:SchematicSymbol): s
+    (sd:SymbolDefn): create-symbol(sd)
+  val [q1, q2] = get-element-ports(symb)
+
+  within component = modify-components(module):
+    inside pcb-module:
+      label<Instantiable|False> return:
+        val c? = property?(component.category)
+        val cat-name = match(c?):
+          (_:None): return(false)
+          (given:One<String>): value(given)
+        if cat-name == cat-type :
+          return $ within transform-component(component) :
+            inside pcb-component :
+              val [p1, p2] = get-element-ports(self)
+              override symbol = symb(p1 => q1, p2 => q2)
+
+
+doc: \<DOC>
+Top-Level Module Transformation for the ethernet-io design
+
+This function will transform the top-level design by applying all
+the replacement symbols for resistors and capacitors. This is
+where we customize the look and feel of the passive components.
+<DOC>
+public defn replace-symbols (module:Instantiable) -> Instantiable :
+  val override = ResistorSymbolParams( style = OpenRectangle, amplitude = 0.2)
+  val R = ResistorSymbol(params = One $ override)
+  module $>
+    replace-element-symbols{_, "resistor", R} $>
+    replace-element-symbols{_, "capacitor", CapacitorSymbol()}

@@ -8,6 +8,7 @@ defpackage ethernet-io/main :
 
   import ethernet-io/helpers
   import ethernet-io/power
+  import ethernet-io/transforms
 
   import jlc-pcb/stackups/vias
 
@@ -115,13 +116,12 @@ pcb-module top-level :
   ; for i in 0 to length(cls) do:
   ;   net (GND, cls[i].pwr.V-)
 
-
-
 setup-board("ethernet-io", board-shape, signal-shrink = 0.5)
-set-main-module(top-level)
+val std-design = top-level $> replace-symbols
+set-main-module(std-design)
 
 ; View the results
-; view-design-explorer()
+view-design-explorer()
 ; view-bom(BOM-STD)
 view-schematic()
 view-board()
