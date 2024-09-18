@@ -13,5 +13,6 @@ stmicro = {path = "libs/stmicro"}
 TI-vreg = { path = "libs/TI-VREG" }
 microchip-networking = { path = "libs/microchip-networking"}
 EEPROM = { path = "libs/EEPROM" }
+debug = { path = "libs/debug" }
 JITX = { path = "{SLM_ROOT}/JITX" }
 ocdb = { path = "{SLM_ROOT}/ocdb" }

@@ -13,7 +13,10 @@ defpackage ethernet-io/MCU:
   import jsl/bundles
 
   import jsl/circuits/CrystalResonator
+  import jsl/circuits/ConfigStrap
+  import jsl/circuits/Pullups
   import power-systems
+  import debug/test-points
 
 
 
@@ -71,6 +74,8 @@ public pcb-module circuit:
   net (mng-bus.mdc, mdio.mdc)
   net (mng-bus.mdio, mdio.mdio)
 
+  make-test-points(mng-bus)
+
   val pullup-miim = create-resistor(resistance = 4.7e3, precision = (1 %))
 
   inst pullup-mdio : pullup-miim
@@ -120,7 +125,6 @@ public pcb-module circuit:
     precision = (1 %)
   )
 
-
   ; BOOT0 - causes the microcontroller to enter bootloader
   ;   mode on reset
 
@@ -133,3 +137,40 @@ public pcb-module circuit:
   inst boot-sw : ethernet_io_lib/components/tactile-sw/device
   net (boot-sw.p[1], rail-3v3.V+)
   net (boot-sw.p[2], mcu.BOOT)
+
+
+  ; DIP Switches for configuration
+
+  val num-sw = 4
+  inst DIP : ethernet_io_lib/components/DIP-sw/device(num-sw)
+
+  net dip-cfg:pin[num-sw]
+  for i in 1 through num-sw do:
+    net (dip-cfg[i - 1], DIP.p[i])
+    net (GND, DIP.p[i + num-sw])
+
+    insert-pullup(dip-cfg[i - 1], rail-3v3)
+
+  require dip-gpio:gpio[num-sw] from mcu
+  for i in 0 to num-sw do:
+    net (dip-cfg[i], dip-gpio[i].gpio)
+
+
+  ; Board Revision Config
+  ;  These pullups are for indicating which board version
+  ; the hardware represents to the microcontroller at runtime.
+  var num-rev-bits = 3
+  val pullup-R-t = create-resistor(resistance = 4.7e3, precision = (1 %))
+  inst configs : ConfigStrap(
+    num-elems = num-rev-bits,
+    comp = pullup-R-t,
+    pack? = One(LongitudinalPacking(margin = 0.2))
+  )
+  net (configs.hi, rail-3v3.V+)
+  net (configs.lo, GND)
+
+  require straps:config-strap-bus(num-rev-bits) from configs
+  require rev-gpio:gpio[num-rev-bits] from mcu
+  for i in 0 to num-rev-bits do:
+
+    net (straps.config[i], rev-gpio[i].gpio)
