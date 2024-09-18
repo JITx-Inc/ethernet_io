@@ -22,6 +22,8 @@ defpackage ethernet-io/network-switch:
   import jsl/protocols/ethernet/MII/MIIM
 
   import power-systems
+  import debug/test-points
+
 
 val rmii-bus = rmii(add-rx-error = false)
 
@@ -57,6 +59,10 @@ public pcb-module circuit (therm-via:Via):
   inst filt-1v2 : unbalanced-filter(ferrite)
   net (VDD-1v2, filt-1v2.vin)
   net (filt-1v2.vout, netsw.rail-analog-1v2)
+
+  net A1v2 (netsw.rail-analog-1v2.V+)
+  net A3v3 (netsw.rail-analog.V+)
+  make-test-points([A1v2, A3v3])
 
   ; ------- Via Grid -----------
   val tv-g = GridThermalVias(
@@ -126,13 +132,16 @@ public pcb-module circuit (therm-via:Via):
     netsw.C.PME_N, VDD-3v3,
     elem-type = pullup-R-t
   )
-  net (power-evt-n, netsw.C.PME_N)
+  net PME_N (power-evt-n, netsw.C.PME_N)
 
   insert-pullup(
     netsw.C.INTRP_N, VDD-3v3,
     elem-type = pullup-R-t
   )
-  net (irq-n, netsw.C.INTRP_N)
+  net IRQ_N (irq-n, netsw.C.INTRP_N)
+
+  make-test-points([IRQ_N, PME_N])
+
 
   ; These connections are not used in the MIIM
   ;   management interface.

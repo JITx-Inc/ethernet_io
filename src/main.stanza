@@ -16,10 +16,12 @@ defpackage ethernet-io/main :
   import jsl/symbols/net-symbols
   import jsl/si
   import jsl/circuits/Network
+  import jsl/protocols/ethernet/MII/RMII
 
   import power-systems
+  import debug/test-points
 
-  import jsl/protocols/ethernet/MII/RMII
+
 
 ; Define the shape/size of the board
 ; val board-shape = RoundedRectangle(70.0, 50.0, 0.25)
@@ -95,6 +97,7 @@ pcb-module top-level :
   apply-power(reset-circ, pwr-mng.VDD-3v3)
 
   net RESET_n (controller.reset-n, reset-circ.RESET_N, netsw.netsw.C.RESET_N)
+  make-test-points(RESET_n)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Debug Interface

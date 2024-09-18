@@ -11,9 +11,11 @@ defpackage ethernet-io/power:
   import jsl/design/E-Series
   import jsl/design/introspection
   import jsl/circuits/Network
+  import jsl/circuits/Pullups
   import jsl/utils
 
   import power-systems
+  import debug/test-points
   import voltage-divider
   import inductors/specs
 
@@ -159,7 +161,8 @@ public pcb-module DCDC-24V-to-5V (vin:Toleranced) :
 
   val outputs = make-circuit(buck, IC.buck)
   val vout-port = value(outputs[0])
-  net (vout-port, self.VOUT.V+)
+  net V5v (vout-port, self.VOUT.V+)
+  make-test-points(V5v)
 
   ; Finally - construct the feedback divider
   val fb-cst = InverseDividerConstraints(
@@ -262,7 +265,8 @@ public pcb-module DCDC-5V-to-3v3:
 
   val outputs = make-circuit(buck, IC.buck)
   val vout-port = value(outputs[0])
-  net (vout-port, self.VOUT.V+, IC.SW.VOS)
+  net V3v3 (vout-port, self.VOUT.V+, IC.SW.VOS)
+  make-test-points(V3v3)
 
   ; Construct a voltage divider for the feedback.
   ;   Note that we're using the 3.3V fixed version
@@ -362,7 +366,8 @@ public pcb-module DCDC-5V-to-1v2:
 
   val outputs = make-circuit(buck, IC.buck)
   val vout-port = value(outputs[0])
-  net (vout-port, self.VOUT.V+, IC.SW.VOS)
+  net V1v2 (vout-port, self.VOUT.V+, IC.SW.VOS)
+  make-test-points(V1v2)
 
   ; Construct a voltage divider for the feedback.
   ;   Note that we're using the 3.3V fixed version
@@ -451,27 +456,16 @@ public pcb-module power-mng:
   ;
 
   ; Enable the 1.2V on the VIN
-
   net (DCDC-1v2.enable, USB-OR.vout.V+)
 
   ; Power Good for 1.2V is referenced from 5V
   ;  to be sure that we can drive the voltage
   ;  threshold for the other DC/DC's enable.
-  insert-resistor(
-    USB-OR.vout.V+, DCDC-1v2.power-good,
-    resistance = 10.0e3
-    precision = (5 %)
-  )
-
+  insert-pullup(DCDC-1v2.power-good, USB-OR.vout)
   net (DCDC-1v2.power-good, DCDC-3v3.enable)
 
   ; Add a pullup to 3.3V rail for the
   ;  Power good so that we can feed to both
   ;  the reset logic and to the MCU's IO.
-  insert-resistor(
-    VDD-3v3-n, DCDC-3v3.power-good,
-    resistance = 10.0e3
-    precision = (5 %)
-  )
-
+  insert-pullup(DCDC-3v3.power-good, VDD-3v3-n)
   net (DCDC-3v3.power-good, power-good)

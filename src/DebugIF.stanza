@@ -15,6 +15,7 @@ defpackage ethernet-io/DebugIF:
   import jsl/circuits/CrystalResonator
 
   import power-systems
+  import debug/test-points
   import FTDI/components/FT2232HL
 
 doc: \<DOC>
@@ -48,6 +49,8 @@ pcb-module FTDI-EEPROM :
   net (ROM.C.CS, cfg.cs)
   net (ROM.C.CLK, cfg.clk)
   net (ROM.C.DI, cfg.data)
+
+  make-test-points(cfg)
 
   ; Connect a DO -> uwire.data through a 2k resistor
   insert-resistor(
@@ -160,6 +163,8 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
 
   net DBG-ACTIVE (dbg-active, ftdi.C.PWREN_n)
 
+  make-test-points([DBG-ACTIVE, target-reset, bootloader-enable])
+
   ;; FTDI EEPROM
   inst eeprom : FTDI-EEPROM
 
@@ -192,6 +197,8 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
   ; This is the USB power connection that we will be used
   ;  for debug power
   net VUSB (VDD-USB, USBC.conn.vbus)
+
+  make-test-points(VUSB.V+)
 
   inst esd-prot : ethernet_io_lib/components/ESD224DQAR/device
   net (esd-prot.GND[1], esd-prot.GND[2], GND)
