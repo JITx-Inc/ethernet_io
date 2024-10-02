@@ -13,7 +13,6 @@ defpackage ethernet-io/main :
   import jlc-pcb/stackups/vias
 
   import jsl/bundles
-  import jsl/symbols/net-symbols
   import jsl/si
   import jsl/circuits/Network
   import jsl/protocols/ethernet/MII/RMII
