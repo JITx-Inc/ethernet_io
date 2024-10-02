@@ -203,14 +203,9 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
   ; Two separate pull down resistors per the USB-C
   ;  spec Section 4.5.1.2.1
   ; https://www.usb.org/sites/default/files/USB%20Type-C%20Spec%20R2.0%20-%20August%202019.pdf
-  ; Don't pull a R-pi 4
   val pu-R = create-resistor(resistance = 5.1e3, precision = (1 %))
   for i in indices(USBC.conn.bus.cc) do:
     insert-pulldown(USBC.conn.bus.cc[i], GND, elem-type = pu-R)
-
-  ; Need a signal-end here
-  ; for i in 0 to length(USBC.conn.bus.sbu) do:
-  ;   no-connect(USBC.conn.bus.sbu[i])
 
   ; This is the USB power connection that we will be used
   ;  for debug power
@@ -244,7 +239,6 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
   ; Self-Powered - Reset for FTDI on Cable Connect
   ; See section 2.4.4 Figure 2.6 in the hardware design guide.
   ;
-  ; Voltage divider here 4.7k / 10.0k
   val R-t = Elem{_, name = `Rt} $ create-resistor(resistance = 4.7e3, precision = (1 %))
   val R-b = Elem{_, name = `Rb} $ create-resistor(resistance = 10.0e3, precision = (1 %))
   val Vbus-V = typ $ property(zener.zener-V)
