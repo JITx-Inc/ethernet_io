@@ -24,8 +24,7 @@ defpackage ethernet-io/main :
 
 
 ; Define the shape/size of the board
-; val board-shape = RoundedRectangle(70.0, 50.0, 0.25)
-val board-shape = RoundedRectangle(100.0, 70.0, 0.25)
+val board-shape = RoundedRectangle(100.0, 70.0, 0.5)
 
 
 ; Set the Global Query Defaults
@@ -43,8 +42,6 @@ defn create-reset-circuit () :
       type = "ceramic",
       temperature-coefficient_code = "X7R"
       )
-    ; TODO - I want a way to control the reset of the network switch
-    ;   from the microcontroller.
     val reset-circ-type = create-circuit( (diode | pullup) + Tap(`RESET_N, reset-sw | delay-cap))
     inst reset-circ : reset-circ-type
     reset-circ
@@ -61,9 +58,6 @@ public pcb-module comms-core :
 
   net PWR-3v3 (pwr-mng.VDD-3v3, netsw.VDD-3v3, rail-3v3)
   net PWR-1v2 (pwr-mng.VDD-1v2, netsw.VDD-1v2)
-
-  property(PWR-3v3.voltage) = 3.3
-  property(PWR-1v2.voltage) = 1.2
 
   public inst controller : ethernet-io/MCU/circuit
   net (pwr-mng.VDD-3v3, controller.rail-3v3)
