@@ -94,15 +94,18 @@ public pcb-module circuit:
 
   ; Analog Interface
 
-  val ferrite = ethernet_io_lib/components/ferrite/BLM18KG(220)
+  val ferrite = passives/ferrite/BLM18KG(220)
   inst filt-3v3 : unbalanced-filter(ferrite)
   net (rail-3v3, filt-3v3.vin)
   net (filt-3v3.vout, mcu.rail-VDDA)
 
+  ; STM suggests connecting VREF to VDDA even if not used.
+  net (filt-3v3.vout, mcu.VREF)
+
   ;; ---- Crystal ----
   ;  12MHz +/- 50ppm
 
-  val xtal-type = ethernet_io_lib/components/crystal/FA-238(12)
+  val xtal-type = passives/crystal/FA-238(12)
 
   val resonator-type = create-crystal-resonator(
     xtal-type = xtal-type,
@@ -134,7 +137,7 @@ public pcb-module circuit:
 
   ; This switch allows us to manually force the bootloader sequence
   ; on the microcontroller in the case we are not using the microcontroller.
-  inst boot-sw : ethernet_io_lib/components/tactile-sw/device
+  inst boot-sw : switches/tactile-sw/device
   net (boot-sw.p[1], rail-3v3.V+)
   net (boot-sw.p[2], mcu.BOOT)
 
@@ -142,7 +145,7 @@ public pcb-module circuit:
   ; DIP Switches for configuration
 
   val num-sw = 4
-  inst DIP : ethernet_io_lib/components/DIP-sw/device(num-sw)
+  inst DIP : switches/DIP-sw/device(num-sw)
 
   net dip-cfg:pin[num-sw]
   for i in 1 through num-sw do:

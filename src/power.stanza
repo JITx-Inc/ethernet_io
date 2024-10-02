@@ -6,13 +6,14 @@ defpackage ethernet-io/power:
   import jitx/parts/query-api
 
   import jsl/bundles
-  import jsl/errors
   import jsl/symbols/net-symbols
   import jsl/design/E-Series
   import jsl/design/introspection
   import jsl/circuits/Network
   import jsl/circuits/Pullups
   import jsl/utils
+  import jsl/landpatterns
+  import jsl/geometry/box
 
   import power-systems
   import debug/test-points
@@ -102,6 +103,7 @@ public pcb-module DCDC-24V-to-5V (vin:Toleranced) :
   val base-Q = CapacitorQuery(
     type = "ceramic",
     temperature-coefficient_code = "X7R"
+    case = ["0603", "0805", "1206"]
   )
 
   val C-series = E12()
@@ -199,7 +201,6 @@ public pcb-module DCDC-5V-to-3v3:
   port VOUT : power
 
   port enable
-  port power-good
 
   inst IC : TI-vreg/components/TPS6208x/device(
     TI-vreg/components/TPS6208x/TPS62082DSG
@@ -212,7 +213,6 @@ public pcb-module DCDC-5V-to-3v3:
   net (VIN.V+, IC.SW.VIN)
   net GND (VIN.V-, VOUT.V-, IC.SW.GND)
   net (enable, IC.SW.EN)
-  net (IC.SW.PG, power-good)
 
   ; Datasheet represents a suggested solution, which we will use
   ;  without changes.
@@ -229,6 +229,7 @@ public pcb-module DCDC-5V-to-3v3:
   val base-Q = CapacitorQuery(
     type = "ceramic",
     temperature-coefficient_code = "X7R"
+    case = ["0603", "0805", "1206"]
     precision = precision(C-series)
   )
 
@@ -330,6 +331,7 @@ public pcb-module DCDC-5V-to-1v2:
   val base-Q = CapacitorQuery(
     type = "ceramic",
     temperature-coefficient_code = "X7R"
+    case = ["0603", "0805", "1206"]
     precision = precision(C-series)
   )
 
@@ -369,12 +371,6 @@ public pcb-module DCDC-5V-to-1v2:
   net V1v2 (vout-port, self.VOUT.V+, IC.SW.VOS)
   make-test-points(V1v2)
 
-  ; Construct a voltage divider for the feedback.
-  ;   Note that we're using the 3.3V fixed version
-  ;   so we don't have to populate this. It is a
-  ;   hedge in the case we can't source the fixed
-  ;   version or want to use two adjustables for
-  ;   BOM optimization.
   val fb-cst = InverseDividerConstraints(
     ; Input is the voltage reference of the
     ;   converter
@@ -423,7 +419,7 @@ public pcb-module power-mng:
   ;   DC/DC 5V -----┐
   ;   VUSB-in  -----|----- 5V
 
-  val diode-type = ethernet_io_lib/components/SSA33L/component
+  val diode-type = diodes/SSA33L/component
   inst USB-OR : diode-OR(diode-type, 2)
   net (USB-OR.vin[0], VUSB-in)
   net (USB-OR.vin[1], DCDC-5V.VOUT)
@@ -464,8 +460,36 @@ public pcb-module power-mng:
   insert-pullup(DCDC-1v2.power-good, USB-OR.vout)
   net (DCDC-1v2.power-good, DCDC-3v3.enable)
 
-  ; Add a pullup to 3.3V rail for the
-  ;  Power good so that we can feed to both
-  ;  the reset logic and to the MCU's IO.
-  insert-pullup(DCDC-3v3.power-good, VDD-3v3-n)
-  net (DCDC-3v3.power-good, power-good)
+doc: \<DOC>
+Input Power Connection Circuit
+
+This circuit sets up the terminal block for the
+24V input power. This creates the appropriate
+keepouts for the 24V input.
+
+@member V24 24V Input Rail
+<DOC>
+public pcb-module PowerInConn :
+  port V24 : power
+
+  ; Use a 4 pole so that we can daisy chain power from one device to the next
+  ; ASSUMPTION: supplementary circuit prediction upstream of the device.
+  public inst TB : connectors/components/LSF-SMT/component(num-poles = 4)
+
+  net V24-n (TB.p[1], TB.p[2], V24.V+)
+  symbol(V24-n) = PWR-SYMB
+
+  val pds = get-pads-from-ports([TB.p[1], TB.p[2]])
+  val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.5)
+
+  val KO = KeepoutOverlay(to-Rectangle(b))
+  make-keepout-overlay(
+    KO, TB,
+    ; TODO - I want to use the stackup to construct the "All" set
+    ;  of layers here.
+    layer-set = [LayerIndex(0), LayerIndex(1), LayerIndex(2), LayerIndex(3)]
+    name = "24V-Keepout"
+    )
+
+  net GND (TB.p[3], TB.p[4], V24.V-)
+  symbol(GND) = GND-SYMB

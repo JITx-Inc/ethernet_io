@@ -16,6 +16,8 @@ defpackage ethernet-io/network-switch:
 
   import jsl/landpatterns/thermal-vias
   import jsl/landpatterns/framework
+  import jsl/design/introspection
+  import jsl/geometry/box
 
   import jsl/protocols/ethernet/MDI/MDI-1000Base-T
   import jsl/protocols/ethernet/MII/RMII
@@ -51,7 +53,7 @@ public pcb-module circuit (therm-via:Via):
   ; 1.  3.3V rail to analog vdd
   ; 2.  1.2V rail to analog core vdd
 
-  val ferrite = ethernet_io_lib/components/ferrite/BLM18KG(220)
+  val ferrite = passives/ferrite/BLM18KG(220)
   inst filt-3v3 : unbalanced-filter(ferrite)
   net (VDD-3v3, filt-3v3.vin)
   net (filt-3v3.vout, netsw.rail-analog)
@@ -79,7 +81,7 @@ public pcb-module circuit (therm-via:Via):
   ;; ---- Crystal ----
   ;  25MHz +/- 50ppm
 
-  val xtal-type = ethernet_io_lib/components/crystal/FA-238(25)
+  val xtal-type = passives/crystal/FA-238(25)
 
   val resonator-type = create-crystal-resonator(
     xtal-type = xtal-type,
@@ -156,7 +158,7 @@ public pcb-module circuit (therm-via:Via):
   ;  to select from it differential pairs to apply
   ;  to the ethernet MDIs
   val esd-tmp = CircuitTemplate(
-    ethernet_io_lib/components/ESD224DQAR/device, [
+    diodes/ESD224DQAR/device, [
       BundleStack(dual-pair, 2),
       BundleStack(pass-through, 4)
     ], name = "esd")
@@ -201,6 +203,19 @@ public pcb-module circuit (therm-via:Via):
     net (eth-conn[i].SHIELD, shield-term.p[1])
     net (shield-term.p[2], GND)
 
+    ; Keepouts for the RJ45 connectors
+
+    ; First we will do a keepout for all layers for the shield and
+    ;   mounting holes for the connectors.
+    val pds = get-pads-from-ports([eth-conn[i].J.SHIELD, eth-conn[i].J.MOUNT])
+    val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.5)
+    val KO = KeepoutOverlay(to-Rectangle(b))
+    make-keepout-overlay(
+      KO, eth-conn[i].J,
+      ; TODO Get All Layers here via Introspection
+      layer-set = [LayerIndex(0), LayerIndex(1), LayerIndex(2), LayerIndex(3)]
+      name = to-string("ETH%_-Shield-Keepout" % [i])
+      )
 
   ;;  ----  LED Setup ------
   ; The RJ45 connectors have embedded LEDs - so we will use
@@ -237,7 +252,7 @@ public pcb-module circuit (therm-via:Via):
   ;   will provide dampening resistors near its transmitter.
   topo-bus([sw-bus.tx-en, sw-bus.txd] => [mii.tx-en, mii.txd])
 
-  val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0603"])
+  val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0402"])
   ; pin-model(series-R-type.p[1], series-R-type.p[2]) = PinModel(typ(1.0e-12), typ(0.0))
 
   val rx-bus = [sw-bus.rxd, sw-bus.crs-dv, sw-bus.ref-clk]
