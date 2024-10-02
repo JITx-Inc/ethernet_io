@@ -1,7 +1,3 @@
-; ====================
-; A number of helpful functions to check your designs, export to CAD,
-; update your design in CAD, etc.
-; ====================
 #use-added-syntax(jitx)
 defpackage ethernet-io/helpers :
   import core
@@ -12,10 +8,6 @@ defpackage ethernet-io/helpers :
 
   import jlc-pcb/stackups/vias
   import jlc-pcb/rules/multi_1oz
-
-  ; TODO - PURGE OCDB
-  import ocdb/utils/checks
-  ; import ocdb/utils/generic-components
 
 defn board-def (outline:Shape, signal-shrink:Maybe<Double> = None()):
   pcb-board board-def-pcb:
@@ -74,8 +66,7 @@ public defn setup-board (name:String, outline:Shape -- signal-shrink:Double = ?)
 ; Run the design checks
 ; =====================
 public defn run-check-on-design (circuit:Instantiable) :
-  val main-module = ocdb/utils/generator-utils/run-final-passes(circuit) ; Analyze design with a pass
-  set-main-module(main-module) ; Treat the provided module as a design, and compile it.
+  set-main-module(circuit)
   run-checks("checks.txt")
 
 ; ====================
