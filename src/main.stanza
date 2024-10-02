@@ -25,17 +25,17 @@ defpackage ethernet-io/main :
 
 ; Define the shape/size of the board
 ; val board-shape = RoundedRectangle(70.0, 50.0, 0.25)
-val board-shape = RoundedRectangle(170.0, 150.0, 0.25)
+val board-shape = RoundedRectangle(100.0, 70.0, 0.25)
 
 
 ; Set the Global Query Defaults
-set-global-query-defaults!(min-stock = 1, mounting = "smd", case = ["0402", "0603", "0805", "1206"])
+set-global-query-defaults!(min-stock = 1, mounting = "smd", case = ["0402", "0603"])
 
 defn create-reset-circuit () :
   inside pcb-module:
-    val reset-sw = Elem $ ethernet_io_lib/components/tactile-sw/device
+    val reset-sw = Elem $ switches/tactile-sw/device
     val pullup = Elem $ create-resistor(resistance = 10.0e3, precision = (1 %))
-    val diode = Elem $ ethernet_io_lib/components/SSA33L/component
+    val diode = Elem $ diodes/SSA33L/component
     val delay-cap = Elem $ create-capacitor(
       capacitance = 10.0e-6,
       precision = (10 %),
@@ -49,22 +49,8 @@ defn create-reset-circuit () :
     inst reset-circ : reset-circ-type
     reset-circ
 
-pcb-module PowerInConn :
-  port V24 : power
-
-  ; Use a 4 pole so that we can daisy chain power from one device to the next
-  ; ASSUMPTION: supplementary circuit prediction upstream of the device.
-  public inst TB : connectors/components/LSF-SMT/component(num-poles = 4)
-
-  net V24-n (TB.p[1], TB.p[2], V24.V+)
-  symbol(V24-n) = PWR-SYMB
-
-  net GND (TB.p[3], TB.p[4], V24.V-)
-  symbol(GND) = GND-SYMB
-
-
-; Module to run as a design
-pcb-module top-level :
+public pcb-module comms-core :
+  port rail-3v3 : power
 
   inst PWR : PowerInConn
   inst pwr-mng : power-mng
@@ -73,16 +59,17 @@ pcb-module top-level :
 
   inst netsw : ethernet-io/network-switch/circuit(tented-filled-std-via)
 
-  net PWR-3v3 (pwr-mng.VDD-3v3, netsw.VDD-3v3)
+  net PWR-3v3 (pwr-mng.VDD-3v3, netsw.VDD-3v3, rail-3v3)
   net PWR-1v2 (pwr-mng.VDD-1v2, netsw.VDD-1v2)
 
   property(PWR-3v3.voltage) = 3.3
   property(PWR-1v2.voltage) = 1.2
 
-  inst controller : ethernet-io/MCU/circuit
+  public inst controller : ethernet-io/MCU/circuit
   net (pwr-mng.VDD-3v3, controller.rail-3v3)
 
-  val rmii-cst = RMII-Constraint(jlc-pcb/stackups/JLC04161H-7628/se-50())
+  val se-50 = jlc-pcb/stackups/JLC04161H-7628/se-50(neckdown = NeckDown(clearance = 0.1))
+  val rmii-cst = RMII-Constraint(se-50)
   constrain-topology(controller.mii => netsw.mii, rmii-cst)
 
   net MIIM (controller.mdio, netsw.management)
@@ -112,15 +99,26 @@ pcb-module top-level :
   net (debug-if.target-reset, RESET_n)
   net BOOT_EN (debug-if.bootloader-enable, controller.boot-ctl)
   net DBG_ACTIVE (debug-if.dbg-active, controller.dbg-active)
-  ; Array Stuff
 
-  ; inst cls : ethernet-io/current-loop/current-loop[10]
 
-  ; for i in 0 to length(cls) do:
-  ;   net (GND, cls[i].pwr.V-)
+; Module to run as a design
+pcb-module top-level :
+
+  inst core : comms-core
+
+  net GND (core.rail-3v3.V-)
+
+  ; Sensors and Control Interfaces Instantiate here.
+
+
+  ; Board Level Physical Features
+  geom(GND):
+    copper-pour(LayerIndex(0), isolate = 0.125, rank = 1) = board-shape
+    copper-pour(LayerIndex(1), isolate = 0.125, rank = 1) = board-shape
+
 
 setup-board("ethernet-io", board-shape, signal-shrink = 0.5)
-val std-design = top-level $> replace-symbols
+val std-design = top-level $> replace-symbols $> replace-landpatterns
 set-main-module(std-design)
 
 ; View the results

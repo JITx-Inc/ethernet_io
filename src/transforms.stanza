@@ -5,7 +5,28 @@ defpackage ethernet-io/transforms:
   import jitx/commands
 
   import jsl/design/introspection
+  import jsl/errors
   import jsl/symbols
+  import jsl/landpatterns
+  import jsl/landpatterns/introspection
+
+defn get-category! (component:Instance|Instantiable) -> String:
+  val c? = property?(component.category)
+  match(c?):
+    (_:None):
+      val name = match(component):
+        (cInst:Instance): ref(cInst)
+        (cDefn:Instantiable): to-string(cDefn)
+      throw $ ValueError("No Category Property Found on '%_'" % [])
+    (given:One<String>): value(given)
+
+defn is-category? (component:Instance|Instantiable, cat-type:String) -> True|False :
+  inside pcb-module:
+    val c? = property?(component.category)
+    match(c?):
+      (_:None): false
+      (given:One<String>):
+        value(given) == cat-type
 
 doc: \<DOC>
 Replace Schematic Symbols for Element Components
@@ -33,15 +54,39 @@ public defn replace-element-symbols (module:Instantiable, cat-type:String, symb-
   within component = modify-components(module):
     inside pcb-module:
       label<Instantiable|False> return:
-        val c? = property?(component.category)
-        val cat-name = match(c?):
-          (_:None): return(false)
-          (given:One<String>): value(given)
-        if cat-name == cat-type :
+        if is-category?(component, cat-type):
           return $ within transform-component(component) :
             inside pcb-component :
               val [p1, p2] = get-element-ports(self)
               override symbol = symb(p1 => q1, p2 => q2)
+
+
+defn gen-chip-pkg (component:Instantiable) -> LandPattern|Package :
+  inside pcb-module:
+    val cat-type = get-category!(component)
+    val case = property(component.case)
+    val ko = IntraPadKeepOut()
+    switch(cat-type):
+      "resistor": get-resistor-pkg(case, keep-out = ko)
+      "capacitor": get-capacitor-pkg(case, keep-out = ko)
+      else: get-chip-pkg(case)
+
+
+public defn replace-element-landpatterns (module:Instantiable, cat-type:String, gen-pkg:(Instantiable -> Package|LandPattern)) -> Instantiable :
+  within component = modify-components(module):
+    inside pcb-module:
+      label<Instantiable|False> return:
+        if is-category?(component, cat-type):
+          return $ within transform-component(component) :
+            inside pcb-component :
+              val pkg = gen-pkg(component)
+              val lp = match(pkg):
+                (L:LandPattern): L
+                (P:Package): create-landpattern(P)
+              val q1 = get-pad-by-name!(lp, "p[1]")
+              val q2 = get-pad-by-name!(lp, "p[2]")
+              val [p1, p2] = get-element-ports(self)
+              override landpattern = lp(p1 => q1, p2 => q2)
 
 
 doc: \<DOC>
@@ -57,3 +102,14 @@ public defn replace-symbols (module:Instantiable) -> Instantiable :
   module $>
     replace-element-symbols{_, "resistor", R} $>
     replace-element-symbols{_, "capacitor", CapacitorSymbol()}
+
+
+doc: \<DOC>
+Top Level Module Transformation
+
+This will replace landpatterns with JSL customized landpatterns.
+<DOC>
+public defn replace-landpatterns ( module:Instantiable) -> Instantiable :
+  module $>
+    replace-element-landpatterns{_, "resistor", gen-chip-pkg} $>
+    replace-element-landpatterns{_, "capacitor", gen-chip-pkg}

@@ -2,17 +2,19 @@ name = "ethernet_io"
 version = "0.1.0"
 [dependencies]
 jsl = { path = "libs/jsl"}
-connectors = { path = "libs/connectors"}
-voltage-divider = { path = "libs/voltage-divider" }
-power-systems = { path = "libs/power-systems"}
-ethernet_io_lib = { path = "libs/ethernet_io_lib"}
-FTDI = { path = "libs/FTDI" }
-inductors = { path = "libs/inductors" }
-jlc-pcb = {path = "libs/jlc-pcb"}
-stmicro = {path = "libs/stmicro"}
-TI-vreg = { path = "libs/TI-VREG" }
-microchip-networking = { path = "libs/microchip-networking"}
-EEPROM = { path = "libs/EEPROM" }
-debug = { path = "libs/debug" }
+connectors = { git = "JITx-Inc/connectors", version = "0.2.0" }
+voltage-divider = { git = "JITx-Inc/voltage-divider", version = "0.3.0" }
+power-systems = { git = "JITx-Inc/power-systems", version = "0.3.0" }
+FTDI = { git = "JITx-Inc/FTDI", version = "0.1.0" }
+inductors = { git = "JITx-Inc/inductors", version = "0.2.0" }
+jlc-pcb = { git = "JITx-Inc/jlc-pcb", version = "0.1.0" }
+stmicro = { git = "JITx-Inc/stmicro", version = "0.2.0" }
+TI-vreg = { git = "JITx-Inc/TI-VREG", version = "0.1.0" }
+microchip-networking = { git = "JITx-Inc/microchip-networking", version = "0.2.0" }
+EEPROM = { git = "JITx-Inc/EEPROM", version = "0.1.0" }
+debug = { git = "JITx-Inc/debug", version = "0.1.0" }
+diodes = { git = "JITx-Inc/diodes", version = "0.1.0" }
+passives = { git = "JITx-Inc/passives", version = "0.1.0" }
+switches = { git = "JITx-Inc/switches", version = "0.1.0" }
 JITX = { path = "{SLM_ROOT}/JITX" }
 ocdb = { path = "{SLM_ROOT}/ocdb" }

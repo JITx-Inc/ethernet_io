@@ -13,6 +13,9 @@ defpackage ethernet-io/DebugIF:
   import jsl/circuits/Pullups
   import jsl/circuits/Bypass
   import jsl/circuits/CrystalResonator
+  import jsl/landpatterns
+  import jsl/design/introspection
+  import jsl/geometry/box
 
   import power-systems
   import debug/test-points
@@ -108,7 +111,7 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
 
   ; Use ferrite filter on the VPLL and VPHY rails:
 
-  val ferrite = ethernet_io_lib/components/ferrite/BLM18KG(220)
+  val ferrite = passives/ferrite/BLM18KG(220)
 
   inst filt-VPLL : unbalanced-filter(ferrite)
   net (VDD-3v3, filt-VPLL.vin)
@@ -135,7 +138,7 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
   ; FTDI Crystal
   ; 12MHz +/- 30ppm
 
-  val xtal-type = ethernet_io_lib/components/crystal/FA-238(12)
+  val xtal-type = passives/crystal/FA-238(12)
 
   ; @TODO - check that the crystal meets the precision
   ;   requirement of 30ppm => 0.003%
@@ -178,7 +181,22 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
 
   inst USBC : connectors/components/USB/USBTypeC/device
 
-  inst zener : ethernet_io_lib/components/zener/MMSZ4-Zener(5100)
+  ; Construct Pour Keepouts on applicable layers
+  val pt-pd-map = port-to-pads(USBC.J)
+  val pds = for kvp in pt-pd-map seq-cat:
+    value(kvp)
+  val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.25)
+  val KO = KeepoutOverlay(to-Rectangle(b))
+  make-keepout-overlay(
+    KO, USBC.J,
+    ; TODO - I want to use the stackup to construct the set
+    ;  of `Not(LayerIndex(1))` instead of explicitly calling
+    ;  out these 3 layers.
+    layer-set = [LayerIndex(0), LayerIndex(2), LayerIndex(3)]
+    name = "USBC-Keepout"
+    )
+
+  inst zener : diodes/MMSZ4-zener/device(5100)
 
   apply-power(zener, USBC.conn.vbus)
 
@@ -200,7 +218,7 @@ public pcb-module circuit (USB2-RS:DifferentialRoutingStructure):
 
   make-test-points(VUSB.V+)
 
-  inst esd-prot : ethernet_io_lib/components/ESD224DQAR/device
+  inst esd-prot : diodes/ESD224DQAR/device
   net (esd-prot.GND[1], esd-prot.GND[2], GND)
 
   val cst = USB-Constraint(proto = USB2, route-struct = USB2-RS)
