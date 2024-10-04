@@ -87,7 +87,7 @@ public pcb-module circuit (therm-via:Via):
     xtal-type = xtal-type,
     C-load = typ(property(xtal-type.C-load))
     ; From IBIS file
-    C-stray = typ(0.25e-12),
+    C-stray = typ(5.0e-12 + 0.25e-12),
     V-rating = 2.0 * 3.3 ; AVDDH
   )
 
