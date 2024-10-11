@@ -12,11 +12,7 @@ defpackage ethernet-io/main :
 
   import jlc-pcb/stackups/vias
 
-  import jsl/bundles
-  import jsl/si
-  import jsl/circuits/Network
-  import jsl/protocols/ethernet/MII/RMII
-
+  import jsl
   import power-systems
   import debug/test-points
 

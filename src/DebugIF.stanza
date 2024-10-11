@@ -5,18 +5,7 @@ defpackage ethernet-io/DebugIF:
   import jitx/commands
   import jitx/parts
 
-  import jsl/bundles
-  import jsl/si
-  import jsl/pin-assignment
-  import jsl/protocols/usb
-  import jsl/circuits/Network
-  import jsl/circuits/Pullups
-  import jsl/circuits/Bypass
-  import jsl/circuits/CrystalResonator
-  import jsl/landpatterns
-  import jsl/design/introspection
-  import jsl/geometry/box
-
+  import jsl
   import power-systems
   import debug/test-points
   import FTDI/components/FT2232HL

@@ -8,13 +8,7 @@ defpackage ethernet-io/MCU:
   import jsl/protocols/ethernet/MII/RMII
   import jsl/protocols/ethernet/MII/MIIM
 
-  import jsl/si
-  import jsl/pin-assignment
-  import jsl/bundles
-
-  import jsl/circuits/CrystalResonator
-  import jsl/circuits/ConfigStrap
-  import jsl/circuits/Pullups
+  import jsl
   import power-systems
   import debug/test-points
 
