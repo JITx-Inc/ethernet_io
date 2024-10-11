@@ -5,16 +5,8 @@ defpackage ethernet-io/power:
   import jitx/commands
   import jitx/parts/query-api
 
-  import jsl/bundles
-  import jsl/symbols/net-symbols
-  import jsl/design/E-Series
-  import jsl/design/introspection
-  import jsl/circuits/Network
-  import jsl/circuits/Pullups
+  import jsl
   import jsl/utils
-  import jsl/landpatterns
-  import jsl/geometry/box
-
   import power-systems
   import debug/test-points
   import voltage-divider

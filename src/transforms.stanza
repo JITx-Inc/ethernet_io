@@ -4,11 +4,7 @@ defpackage ethernet-io/transforms:
   import jitx
   import jitx/commands
 
-  import jsl/design/introspection
-  import jsl/errors
-  import jsl/symbols
-  import jsl/landpatterns
-  import jsl/landpatterns/introspection
+  import jsl
 
 defn get-category! (component:Instance|Instantiable) -> String:
   val c? = property?(component.category)

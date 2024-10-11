@@ -5,24 +5,7 @@ defpackage ethernet-io/network-switch:
   import jitx/commands
   import jitx/parts/query-api
 
-  import jsl/bundles
-  import jsl/si
-  import jsl/pin-assignment
-
-  import jsl/circuits/ConfigStrap
-  import jsl/circuits/CrystalResonator
-  import jsl/circuits/Pullups
-  import jsl/circuits/Network
-
-  import jsl/landpatterns/thermal-vias
-  import jsl/landpatterns/framework
-  import jsl/design/introspection
-  import jsl/geometry/box
-
-  import jsl/protocols/ethernet/MDI/MDI-1000Base-T
-  import jsl/protocols/ethernet/MII/RMII
-  import jsl/protocols/ethernet/MII/MIIM
-
+  import jsl
   import power-systems
   import debug/test-points
 
