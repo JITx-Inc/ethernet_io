@@ -192,6 +192,80 @@ pcb-module eth-interface :
       name = to-string("ETH%_-Shield-Keepout" % [i])
       )
 
+val rmii-bus = rmii(add-rx-error = false)
+
+pcb-module controller :
+
+  port rail-3v3 : power
+
+  port reset-n
+
+  port mii : rmii-bus
+  port mdio : miim
+
+  port switch-irq-n
+  port switch-pme-n
+
+  port dbg : jtag
+  port acm : uart-fc()
+  port boot-ctl
+  port dbg-active
+
+  public inst ctl : stmicro/components/STM32H723VGT6/proto-circuit(hw-rev = 1)
+
+  net (rail-3v3, ctl.rail-3v3)
+  net GND (rail-3v3.V-)
+
+  connect-require-ports(ctl.mcu, [dbg, acm])
+  connect-require-ports(ctl.mcu, [reset-n], def-bundle = reset)
+  connect-require-ports(ctl.mcu, [switch-pme-n, switch-irq-n, dbg-active])
+
+  net (boot-ctl, ctl.boot-ctl)
+
+  ; setup the RMII interface - we want
+  ;  to place resistors on the transmit pins
+  ;  from the MCU and short-trace them close
+  ;  to the MCU.
+
+  require mii-bus:rmii-bus from ctl.mcu
+
+  topo-bus([mii-bus.crs-dv, mii-bus.ref-clk, mii-bus.rxd] => [mii.crs-dv, mii.ref-clk, mii.rxd])
+
+  ; Create Series resistor
+  val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0603"])
+
+  val tx-bus = [mii-bus.txd, mii-bus.tx-en]
+  val tx-out = [mii.txd, mii.tx-en]
+  topo-bus(ShortTrace(tx-bus => series-R-type) => tx-out)
+
+  ; Set signal ends so we get the right routing
+  ;    structure all the way to the pin.
+  set-signal-end(mii, mii-bus)
+
+  require mng-bus : miim from ctl.mcu
+
+  ; Add Pullup resistors
+  net (mng-bus.mdc, mdio.mdc)
+  net (mng-bus.mdio, mdio.mdio)
+
+  make-test-points(mng-bus)
+
+  val pullup-miim = create-resistor(resistance = 4.7e3, precision = (1 %))
+
+  inst pullup-mdio : pullup-miim
+  net (pullup-mdio.p[1], mng-bus.mdio)
+  net (pullup-mdio.p[2], rail-3v3.V+)
+
+  inst pullup-mdc : pullup-miim
+  net (pullup-mdc.p[1], mng-bus.mdc)
+  net (pullup-mdc.p[2], rail-3v3.V+)
+
+  ; Depopulate the Pullup on MDC because it
+  ;  is not needed according to the KSZ9563 datasheet
+  ;  This is a hedge.
+  instance-status(pullup-mdc):
+    bom-status = NotInBOM
+
 public pcb-module comms-core :
   port rail-3v3 : power
 
@@ -255,17 +329,17 @@ public pcb-module comms-core :
   ; Microcontroller
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  public inst controller : ethernet-io/MCU/circuit
-  net (pwr-mng.VDD-3v3, controller.rail-3v3)
+  public inst ctl : controller
+  net (pwr-mng.VDD-3v3, ctl.rail-3v3)
 
   val se-50 = jlc-pcb/stackups/JLC04161H-7628/se-50(neckdown = NeckDown(clearance = 0.1))
   val rmii-cst = RMII-Constraint(se-50)
-  constrain-topology(controller.mii => netsw.mii, rmii-cst)
+  constrain-topology(ctl.mii => netsw.mii, rmii-cst)
 
-  net MIIM (controller.mdio, netsw.management)
+  net MIIM (ctl.mdio, netsw.management)
 
-  net SW_IRQ_N (netsw.irq-n, controller.switch-irq-n)
-  net SW_PME_N (netsw.power-evt-n, controller.switch-pme-n)
+  net SW_IRQ_N (netsw.irq-n, ctl.switch-irq-n)
+  net SW_PME_N (netsw.power-evt-n, ctl.switch-pme-n)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Reset switch
@@ -274,7 +348,7 @@ public pcb-module comms-core :
   inst reset-circ : reset-circuit
   net (reset-circ.rail, pwr-mng.VDD-3v3)
 
-  net RESET_n (controller.reset-n, reset-circ.reset_n, netsw.netsw.C.RESET_N)
+  net RESET_n (ctl.reset-n, reset-circ.reset_n, netsw.netsw.C.RESET_N)
   make-test-points(RESET_n)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -298,15 +372,15 @@ public pcb-module comms-core :
 
   require acm:uart-fc() from debug-if.ftdi
   require dbg:jtag from debug-if.ftdi
-  net (acm, controller.acm)
-  net (dbg, controller.dbg)
+  net (acm, ctl.acm)
+  net (dbg, ctl.dbg)
 
   require reset-ctl:gpio from debug-if.ftdi
   net (reset-ctl.gpio, RESET_n)
 
   require bootloader-en:gpio from debug-if.ftdi
-  net BOOT_EN (bootloader-en.gpio, controller.boot-ctl)
-  net DBG_ACTIVE (debug-if.ftdi.C.PWREN_n, controller.dbg-active)
+  net BOOT_EN (bootloader-en.gpio, ctl.boot-ctl)
+  net DBG_ACTIVE (debug-if.ftdi.C.PWREN_n, ctl.dbg-active)
 
   inst eeprom : FTDI-EEPROM
   net (eeprom.VDD-3v3, rail-3v3)
