@@ -37,7 +37,7 @@ Reset Circuit
 
 See KSZ9563 Datasheet for more info
 @member rail Voltage rail for generating the reset signal
-@member reset_n Active low reset signal generated from tactle switch 
+@member reset_n Active low reset signal generated from tactle switch
 <DOC>
 pcb-module reset-circuit :
   port rail : power
@@ -104,6 +104,16 @@ pcb-module FTDI-EEPROM :
   ;   Causes the EEPROM to use a 16-bit word.
   insert-pullup(ROM.C.ORG, VDD-3v3)
 
+
+doc: \<DOC>
+
+<DOC>
+pcb-module shield-term-t :
+  port SHIELD
+  port GND
+  insert-resistor(SHIELD, GND, R-query, resistance = 0.0, precision = (1 %))
+  insert-capacitor(SHIELD, GND, C-query, capacitance = 4.7e-9, rated-voltage = AtLeast(50.0))
+
 pcb-module usb-interface (USB2-RS:DifferentialRoutingStructure):
   port USB : usb-data
   port VDD-USB : power
@@ -137,9 +147,10 @@ pcb-module usb-interface (USB2-RS:DifferentialRoutingStructure):
     require esd-pair:dual-pair from esd-prot
     topo-pair(src => esd-pair.A => esd-pair.B => dst)
 
-  ; Shield Termination 
-  insert-resistor(USBC.conn.shield, GND, R-query, resistance = 0.0)
-  insert-capacitor(USBC.conn.shield, GND, C-query, capacitance = 4.7e-9, rated-voltage = AtLeast(50.0))
+  ; Shield Termination
+  inst shield-term : shield-term-t
+  net (shield-term.SHIELD, USBC.conn.shield)
+  net (shield-term.GND, GND)
 
   ; Add Keepout for the USB interface.
   val pt-pd-map = port-to-pads(USBC.J)
@@ -156,7 +167,30 @@ pcb-module usb-interface (USB2-RS:DifferentialRoutingStructure):
     name = "USBC-Keepout"
     )
 
+pcb-module eth-interface :
+  port GND
 
+  public inst conns : connectors/components/JD0-0001NL/connector[2]
+
+  for i in 0 to length(conns) do :
+    ; RJ45 Shield Terminations
+    inst shield-term : shield-term-t
+    net (shield-term.SHIELD, conns[i].SHIELD)
+    net (shield-term.GND,    GND)
+
+    ; Keepouts for the RJ45 connectors
+
+    ; First we will do a keepout for all layers for the shield and
+    ;   mounting holes for the connectors.
+    val pds = get-pads-from-ports([conns[i].J.SHIELD, conns[i].J.MOUNT])
+    val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.5)
+    val KO = KeepoutOverlay(to-Rectangle(b))
+    make-keepout-overlay(
+      KO, conns[i].J,
+      ; TODO Get All Layers here via Introspection
+      layer-set = [LayerIndex(0), LayerIndex(1), LayerIndex(2), LayerIndex(3)]
+      name = to-string("ETH%_-Shield-Keepout" % [i])
+      )
 
 public pcb-module comms-core :
   port rail-3v3 : power
@@ -165,11 +199,61 @@ public pcb-module comms-core :
   inst pwr-mng : power-mng
 
   net (PWR.V24, pwr-mng.VIN)
+  net GND (PWR.V24.V-)
 
-  inst netsw : ethernet-io/network-switch/circuit(tented-filled-std-via)
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Gigabit Network Switch
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  inst netsw : microchip-networking/components/KSZ9563/circuit(therm-via = tented-filled-std-via)
 
   net PWR-3v3 (pwr-mng.VDD-3v3, netsw.VDD-3v3, rail-3v3)
   net PWR-1v2 (pwr-mng.VDD-1v2, netsw.VDD-1v2)
+
+  ; RJ45 Connectors
+  inst eth-if : eth-interface
+  net (eth-if.GND, GND)
+
+  ; Construct a pool of esd protectors and use pin assignment
+  ;  to select from it differential pairs to apply
+  ;  to the ethernet MDIs
+  val esd = diodes/ESD224DQAR/create-esd-pool(4, GND)
+  val mdi-constraint = MDI-1000Base-T-Constraint(
+    route-struct = jlc-pcb/stackups/JLC04161H-7628/diff-100()
+  )
+  for i in 0 to length(eth-if.conns) do:
+    require MDI : MDI-1000Base-T from netsw.netsw
+    require conn-IF : MDI-1000Base-T from eth-if.conns[i]
+
+    within [src, dst] = constrain-topology(MDI => conn-IF, mdi-constraint):
+      require prot-MDI : dual-pair[NUM_PAIRS_1000Base-T] from esd
+
+      topology MDI (src.TP => dst.TP)
+      for i in 0 to NUM_PAIRS_1000Base-T do:
+        topo-pair(src.TP[i] => prot-MDI[i].A => prot-MDI[i].B  => dst.TP[i])
+
+  ;;  ----  LED Setup ------
+  ; The RJ45 connectors have embedded LEDs - so we will use
+  ;  drive those LEDs from the netsw component
+
+  ; @TODO - check bias resistor value here -
+  ;  compute from characteristics of netsw device IO and
+  ;  forward voltage of the LED.
+
+  ; val LED-pts = [netsw.netsw.C.LED1, netsw.netsw.C.LED2]
+  for (i in 0 to length(eth-if.conns)) do:
+    val led-g = eth-if.conns[i].LED-G
+    insert-resistor(rail-3v3.V+, led-g.a, R-query, resistance = 330.0)
+    ; net (led-g.c, LED-pt[0])
+    net (led-g.c, netsw.LEDs[i][0])
+
+    val led-y = eth-if.conns[i].LED-Y
+    insert-resistor(rail-3v3.V+, led-y.a, R-query, resistance = 330.0)
+    ; net (led-y.c, LED-pt[1])
+    net (led-y.c, netsw.LEDs[i][1])
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Microcontroller
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
   public inst controller : ethernet-io/MCU/circuit
   net (pwr-mng.VDD-3v3, controller.rail-3v3)
@@ -200,7 +284,7 @@ public pcb-module comms-core :
   ; USB Interface
   val USB2-RS = jlc-pcb/stackups/JLC04161H-7628/diff-90()
   inst usb-if : usb-interface(USB2-RS)
-  
+
   ; FTDI Debug Interface
 
   inst debug-if : FTDI/DebugIF/circuit(
