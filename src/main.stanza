@@ -16,30 +16,147 @@ defpackage ethernet-io/main :
   import power-systems
   import debug/test-points
 
-
-
 ; Define the shape/size of the board
 val board-shape = RoundedRectangle(100.0, 70.0, 0.5)
-
 
 ; Set the Global Query Defaults
 set-global-query-defaults!(min-stock = 1, mounting = "smd", case = ["0402", "0603"])
 
-defn create-reset-circuit () :
-  inside pcb-module:
-    val reset-sw = Elem $ switches/tactile-sw/device
-    val pullup = Elem $ create-resistor(resistance = 10.0e3, precision = (1 %))
-    val diode = Elem $ diodes/SSA33L/component
-    val delay-cap = Elem $ create-capacitor(
-      capacitance = 10.0e-6,
-      precision = (10 %),
-      rated-voltage = AtLeast(2.0 * 3.3),
-      type = "ceramic",
-      temperature-coefficient_code = "X7R"
-      )
-    val reset-circ-type = create-circuit( (diode | pullup) + Tap(`RESET_N, reset-sw | delay-cap))
-    inst reset-circ : reset-circ-type
-    reset-circ
+val R-query = ResistorQuery(
+  precision = (1 %)
+)
+
+val C-query = CapacitorQuery(
+  type = "ceramic",
+  temperature-coefficient_code = "X7R",
+  precision = (10 %)
+)
+
+doc: \<DOC>
+Reset Circuit
+
+See KSZ9563 Datasheet for more info
+@member rail Voltage rail for generating the reset signal
+@member reset_n Active low reset signal generated from tactle switch 
+<DOC>
+pcb-module reset-circuit :
+  port rail : power
+  port reset_n
+
+  inst reset-sw : switches/tactile-sw/device
+  inst R : create-resistor(R-query, resistance = 10.0e3)
+  inst diode : diodes/SSA33L/component
+  inst delay-cap : create-capacitor(
+    C-query
+    capacitance = 10.0e-6,
+    rated-voltage = AtLeast(2.0 * 3.3),
+    )
+
+  net (diode.c, R.p[1], rail.V+)
+  net (diode.a, R.p[2], reset_n)
+  net (reset-sw.p[1], delay-cap.p[1], reset_n)
+  net (reset-sw.p[2], delay-cap.p[2], rail.V-)
+
+
+doc: \<DOC>
+EEPROM Configuration for the FTDI interface
+
+This module provides a EEPROM to store the configuration
+parameters of the FTDI. This supports the VID, PID, etc.
+
+@member VDD-3v3 Power rail supplying 3.3V - The FTDI needs
+3.3V to support it's interface.
+@member cfg FTDI specific microwire bus.
+<DOC>
+pcb-module FTDI-EEPROM :
+
+  port VDD-3v3 : power
+
+  port cfg : microwire-3wire()
+
+  inst ROM : EEPROM/components/MC-93LC46/dev-93LC46C-I
+  net (VDD-3v3, ROM.rail-VCC)
+
+  insert-capacitor(
+    ROM.C.VCC, ROM.C.VSS,
+    C-query
+    capacitance = 0.1e-6
+    short-trace? = true
+  )
+
+  net (ROM.C.CS, cfg.cs)
+  net (ROM.C.CLK, cfg.clk)
+  net (ROM.C.DI, cfg.do)
+
+  make-test-points(cfg)
+
+  ; Connect a DO -> uwire.data through a 2k resistor
+  insert-resistor(
+    ROM.C.DO, cfg.do,
+    R-query
+    resistance = 2.0e3,
+  )
+
+  insert-pullup(ROM.C.CS, VDD-3v3)
+  insert-pullup(ROM.C.CLK, VDD-3v3)
+  insert-pullup(ROM.C.DO, VDD-3v3)
+  ; ORG => 1
+  ;   Causes the EEPROM to use a 16-bit word.
+  insert-pullup(ROM.C.ORG, VDD-3v3)
+
+pcb-module usb-interface (USB2-RS:DifferentialRoutingStructure):
+  port USB : usb-data
+  port VDD-USB : power
+
+  inst USBC : connectors/components/USB/USBTypeC/device
+
+  net VUSB (VDD-USB, USBC.conn.vbus)
+
+  net GND (VUSB.V-)
+
+  inst zener : diodes/MMSZ4-zener/device(5100)
+  apply-power(zener, USBC.conn.vbus)
+
+  ; Two separate pull down resistors per the USB-C
+  ;  spec Section 4.5.1.2.1
+  ; https://www.usb.org/sites/default/files/USB%20Type-C%20Spec%20R2.0%20-%20August%202019.pdf
+  val pu-R = create-resistor(resistance = 5.1e3, precision = (1 %))
+  for i in indices(USBC.conn.bus.cc) do:
+    insert-pulldown(USBC.conn.bus.cc[i], GND, elem-type = pu-R)
+
+  ; This is the USB power connection that we will be used
+  ;  for debug power
+
+  make-test-points(VUSB.V+)
+
+  inst esd-prot : diodes/ESD224DQAR/device
+  net (esd-prot.GND[1], esd-prot.GND[2], GND)
+
+  val cst = USB-Constraint(proto = USB2, route-struct = USB2-RS)
+  within [src, dst] = constrain-topology(USB.data => USBC.conn.bus.data, cst):
+    require esd-pair:dual-pair from esd-prot
+    topo-pair(src => esd-pair.A => esd-pair.B => dst)
+
+  ; Shield Termination 
+  insert-resistor(USBC.conn.shield, GND, R-query, resistance = 0.0)
+  insert-capacitor(USBC.conn.shield, GND, C-query, capacitance = 4.7e-9, rated-voltage = AtLeast(50.0))
+
+  ; Add Keepout for the USB interface.
+  val pt-pd-map = port-to-pads(USBC.J)
+  val pds = for kvp in pt-pd-map seq-cat:
+    value(kvp)
+  val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.25)
+  val KO = KeepoutOverlay(to-Rectangle(b))
+  make-keepout-overlay(
+    KO, USBC.J,
+    ; TODO - I want to use the stackup to construct the set
+    ;  of `Not(LayerIndex(1))` instead of explicitly calling
+    ;  out these 3 layers.
+    layer-set = [LayerIndex(0), LayerIndex(2), LayerIndex(3)]
+    name = "USBC-Keepout"
+    )
+
+
 
 public pcb-module comms-core :
   port rail-3v3 : power
@@ -68,26 +185,48 @@ public pcb-module comms-core :
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Reset switch
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  val reset-circ = create-reset-circuit()
-  apply-power(reset-circ, pwr-mng.VDD-3v3)
+  inst reset-circ : reset-circuit
+  net (reset-circ.rail, pwr-mng.VDD-3v3)
 
-  net RESET_n (controller.reset-n, reset-circ.RESET_N, netsw.netsw.C.RESET_N)
+  net RESET_n (controller.reset-n, reset-circ.reset_n, netsw.netsw.C.RESET_N)
   make-test-points(RESET_n)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Debug Interface
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  inst debug-if : ethernet-io/DebugIF/circuit(jlc-pcb/stackups/JLC04161H-7628/diff-90())
-  net (debug-if.VDD-3v3, pwr-mng.VDD-3v3)
-  net (debug-if.VDD-USB, pwr-mng.VUSB-in)
+  ; USB Interface
+  val USB2-RS = jlc-pcb/stackups/JLC04161H-7628/diff-90()
+  inst usb-if : usb-interface(USB2-RS)
+  
+  ; FTDI Debug Interface
 
-  net (debug-if.acm, controller.acm)
-  net (debug-if.dbg, controller.dbg)
+  inst debug-if : FTDI/DebugIF/circuit(
+    FTDI/components/FT2232HL/FT2232H-MPSSE,
+    FTDI/components/FT2232HL/FT2232H-RS232
+    )
+  net (debug-if.VDD-3v3, PWR-3v3)
+  net (debug-if.VDD-USB, usb-if.VDD-USB, pwr-mng.VUSB-in)
 
-  net (debug-if.target-reset, RESET_n)
-  net BOOT_EN (debug-if.bootloader-enable, controller.boot-ctl)
-  net DBG_ACTIVE (debug-if.dbg-active, controller.dbg-active)
+  net (debug-if.USB, usb-if.USB)
+
+  require acm:uart-fc() from debug-if.ftdi
+  require dbg:jtag from debug-if.ftdi
+  net (acm, controller.acm)
+  net (dbg, controller.dbg)
+
+  require reset-ctl:gpio from debug-if.ftdi
+  net (reset-ctl.gpio, RESET_n)
+
+  require bootloader-en:gpio from debug-if.ftdi
+  net BOOT_EN (bootloader-en.gpio, controller.boot-ctl)
+  net DBG_ACTIVE (debug-if.ftdi.C.PWREN_n, controller.dbg-active)
+
+  inst eeprom : FTDI-EEPROM
+  net (eeprom.VDD-3v3, rail-3v3)
+  net (eeprom.cfg, debug-if.CFG)
 
 
 ; Module to run as a design
