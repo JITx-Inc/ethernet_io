@@ -8,42 +8,91 @@ defpackage ethernet-io/main :
 
   import ethernet-io/helpers
   import ethernet-io/power
+  import ethernet-io/controller
   import ethernet-io/transforms
 
   import jlc-pcb/stackups/vias
 
-  import jsl/bundles
-  import jsl/si
-  import jsl/circuits/Network
-  import jsl/protocols/ethernet/MII/RMII
-
+  import jsl
   import power-systems
   import debug/test-points
-
-
 
 ; Define the shape/size of the board
 val board-shape = RoundedRectangle(100.0, 70.0, 0.5)
 
-
 ; Set the Global Query Defaults
 set-global-query-defaults!(min-stock = 1, mounting = "smd", case = ["0402", "0603"])
 
-defn create-reset-circuit () :
-  inside pcb-module:
-    val reset-sw = Elem $ switches/tactile-sw/device
-    val pullup = Elem $ create-resistor(resistance = 10.0e3, precision = (1 %))
-    val diode = Elem $ diodes/SSA33L/component
-    val delay-cap = Elem $ create-capacitor(
-      capacitance = 10.0e-6,
-      precision = (10 %),
-      rated-voltage = AtLeast(2.0 * 3.3),
-      type = "ceramic",
-      temperature-coefficient_code = "X7R"
+val R-query = ResistorQuery(
+  precision = (1 %)
+)
+
+val C-query = CapacitorQuery(
+  type = "ceramic",
+  temperature-coefficient_code = "X7R",
+  precision = (10 %)
+)
+
+doc: \<DOC>
+EEPROM Configuration for the FTDI interface
+
+This module provides a EEPROM to store the configuration
+parameters of the FTDI. This supports the VID, PID, etc.
+
+@member VDD-3v3 Power rail supplying 3.3V - The FTDI needs
+3.3V to support it's interface.
+@member cfg FTDI specific microwire bus.
+<DOC>
+pcb-module FTDI-EEPROM :
+
+  port VDD-3v3 : power
+
+  port cfg : microwire-4()
+
+  inst ROM : EEPROM/components/MC-93LC46/dev-93LC46C-I
+  net (VDD-3v3, ROM.rail-VCC)
+
+  insert-capacitor(
+    ROM.C.VCC, ROM.C.VSS,
+    C-query
+    capacitance = 0.1e-6
+    short-trace? = true
+  )
+
+  net (ROM.C.CS, cfg.cs)
+  net (ROM.C.CLK, cfg.clk)
+  net (ROM.C.DI, cfg.di)
+  net (ROM.C.DO, cfg.do)
+
+  ; ORG => 1
+  ;   Causes the EEPROM to use a 16-bit word.
+  insert-pullup(ROM.C.ORG, VDD-3v3)
+
+
+pcb-module eth-interface :
+  port GND
+
+  public inst conns : connectors/components/JD0-0001NL/connector[2]
+
+  for i in 0 to length(conns) do :
+    ; RJ45 Shield Terminations
+    inst shield-term : shield-termination(R-query, C-query)
+    net (shield-term.SHIELD, conns[i].SHIELD)
+    net (shield-term.GND,    GND)
+
+    ; Keepouts for the RJ45 connectors
+
+    ; First we will do a keepout for all layers for the shield and
+    ;   mounting holes for the connectors.
+    val pds = get-pads-from-ports([conns[i].J.SHIELD, conns[i].J.MOUNT])
+    val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.5)
+    val KO = KeepoutOverlay(to-Rectangle(b))
+    make-keepout-overlay(
+      KO, conns[i].J,
+      ; TODO Get All Layers here via Introspection
+      layer-set = [LayerIndex(0), LayerIndex(1), LayerIndex(2), LayerIndex(3)]
+      name = to-string("ETH%_-Shield-Keepout" % [i])
       )
-    val reset-circ-type = create-circuit( (diode | pullup) + Tap(`RESET_N, reset-sw | delay-cap))
-    inst reset-circ : reset-circ-type
-    reset-circ
 
 public pcb-module comms-core :
   port rail-3v3 : power
@@ -52,46 +101,128 @@ public pcb-module comms-core :
   inst pwr-mng : power-mng
 
   net (PWR.V24, pwr-mng.VIN)
+  net GND (PWR.V24.V-)
 
-  inst netsw : ethernet-io/network-switch/circuit(tented-filled-std-via)
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Gigabit Network Switch
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  inst netsw : microchip-networking/components/KSZ9563/circuit(therm-via = tented-filled-std-via)
 
   net PWR-3v3 (pwr-mng.VDD-3v3, netsw.VDD-3v3, rail-3v3)
   net PWR-1v2 (pwr-mng.VDD-1v2, netsw.VDD-1v2)
 
-  public inst controller : ethernet-io/MCU/circuit
-  net (pwr-mng.VDD-3v3, controller.rail-3v3)
+  ; RJ45 Connectors
+  inst eth-if : eth-interface
+  net (eth-if.GND, GND)
+
+  ; Construct a pool of esd protectors and use pin assignment
+  ;  to select from it differential pairs to apply
+  ;  to the ethernet MDIs
+  val esd = diodes/ESD224DQAR/create-esd-pool(4, GND)
+  val mdi-constraint = MDI-1000Base-T-Constraint(
+    route-struct = jlc-pcb/stackups/JLC04161H-7628/diff-100()
+  )
+  for i in 0 to length(eth-if.conns) do:
+    require MDI : MDI-1000Base-T from netsw.netsw
+    require conn-IF : MDI-1000Base-T from eth-if.conns[i]
+
+    within [src, dst] = constrain-topology(MDI => conn-IF, mdi-constraint):
+      require prot-MDI : dual-pair[NUM_PAIRS_1000Base-T] from esd
+
+      topology MDI (src.TP => dst.TP)
+      for i in 0 to NUM_PAIRS_1000Base-T do:
+        topo-pair(src.TP[i] => prot-MDI[i].A => prot-MDI[i].B  => dst.TP[i])
+
+  ;;  ----  LED Setup ------
+  ; The RJ45 connectors have embedded LEDs - so we will use
+  ;  drive those LEDs from the netsw component
+
+  ; @TODO - check bias resistor value here -
+  ;  compute from characteristics of netsw device IO and
+  ;  forward voltage of the LED.
+
+  ; val LED-pts = [netsw.netsw.C.LED1, netsw.netsw.C.LED2]
+  for (i in 0 to length(eth-if.conns)) do:
+    val led-g = eth-if.conns[i].LED-G
+    insert-resistor(rail-3v3.V+, led-g.a, R-query, resistance = 330.0)
+    ; net (led-g.c, LED-pt[0])
+    net (led-g.c, netsw.LEDs[i][0])
+
+    val led-y = eth-if.conns[i].LED-Y
+    insert-resistor(rail-3v3.V+, led-y.a, R-query, resistance = 330.0)
+    ; net (led-y.c, LED-pt[1])
+    net (led-y.c, netsw.LEDs[i][1])
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Microcontroller
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  public inst ctl : controller
+  net (pwr-mng.VDD-3v3, ctl.rail-3v3)
 
   val se-50 = jlc-pcb/stackups/JLC04161H-7628/se-50(neckdown = NeckDown(clearance = 0.1))
   val rmii-cst = RMII-Constraint(se-50)
-  constrain-topology(controller.mii => netsw.mii, rmii-cst)
+  constrain-topology(ctl.mii => netsw.mii, rmii-cst)
 
-  net MIIM (controller.mdio, netsw.management)
+  net MIIM (ctl.mdio, netsw.management)
+  make-test-points(MIIM)
 
-  net SW_IRQ_N (netsw.irq-n, controller.switch-irq-n)
-  net SW_PME_N (netsw.power-evt-n, controller.switch-pme-n)
+  net SW_IRQ_N (netsw.irq-n, ctl.switch-irq-n)
+  net SW_PME_N (netsw.power-evt-n, ctl.switch-pme-n)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Reset switch
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  val reset-circ = create-reset-circuit()
-  apply-power(reset-circ, pwr-mng.VDD-3v3)
+  inst reset-circ : debug/circuits/ResetSwitch/reset-circuit(
+    delay = 10.0e-3
+    R-query = R-query,
+    C-query = C-query
+    )
+  net (reset-circ.rail, pwr-mng.VDD-3v3)
 
-  net RESET_n (controller.reset-n, reset-circ.RESET_N, netsw.netsw.C.RESET_N)
+  net RESET_n (ctl.reset-n, reset-circ.reset-n, netsw.netsw.C.RESET_N)
   make-test-points(RESET_n)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Debug Interface
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  inst debug-if : ethernet-io/DebugIF/circuit(jlc-pcb/stackups/JLC04161H-7628/diff-90())
-  net (debug-if.VDD-3v3, pwr-mng.VDD-3v3)
-  net (debug-if.VDD-USB, pwr-mng.VUSB-in)
+  ; USB Interface
+  inst usb-if : connectors/components/USB/USBTypeC/USBC-HighSpeed-Iface(R-query, C-query)
 
-  net (debug-if.acm, controller.acm)
-  net (debug-if.dbg, controller.dbg)
+  ; Add a zener diode accross the USB power
+  inst zener : diodes/MMSZ4-zener/device(5100)
+  apply-power(zener, usb-if.VDD-USB)
 
-  net (debug-if.target-reset, RESET_n)
-  net BOOT_EN (debug-if.bootloader-enable, controller.boot-ctl)
-  net DBG_ACTIVE (debug-if.dbg-active, controller.dbg-active)
+  val USB2-RS = jlc-pcb/stackups/JLC04161H-7628/diff-90()
+  val cst = USB-Constraint(proto = USB2, route-struct = USB2-RS)
+  constrain-topology(ctl.USB.data => usb-if.USB.data, cst)
+
+  net (ctl.VDD-USB, usb-if.VDD-USB)
+  make-test-points(usb-if.VDD-USB.V+)
+
+  ; Add Keepout for the USB interface.
+  val pt-pd-map = port-to-pads(usb-if.USBC.J)
+  val pds = for kvp in pt-pd-map seq-cat:
+    value(kvp)
+  val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.25)
+  val KO = KeepoutOverlay(to-Rectangle(b))
+  make-keepout-overlay(
+    KO, usb-if.USBC.J,
+    ; TODO - I want to use the stackup to construct the set
+    ;  of `Not(LayerIndex(1))` instead of explicitly calling
+    ;  out these 3 layers.
+    layer-set = [LayerIndex(0), LayerIndex(2), LayerIndex(3)]
+    name = "USBC-Keepout"
+    )
+
+  ; FTDI Configuration
+  inst eeprom : FTDI-EEPROM
+  net (eeprom.VDD-3v3, rail-3v3)
+  net CFG (eeprom.cfg, ctl.debug-if.CFG)
+
+  make-test-points(CFG)
 
 
 ; Module to run as a design
@@ -102,7 +233,6 @@ pcb-module top-level :
   net GND (core.rail-3v3.V-)
 
   ; Sensors and Control Interfaces Instantiate here.
-
 
   ; Board Level Physical Features
   geom(GND):

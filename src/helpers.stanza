@@ -4,7 +4,7 @@ defpackage ethernet-io/helpers :
   import jitx
   import jitx/commands
 
-  import jsl/ensure
+  import jsl
 
   import jlc-pcb/stackups/vias
   import jlc-pcb/rules/multi_1oz
