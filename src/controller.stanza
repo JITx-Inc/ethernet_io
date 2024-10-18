@@ -1,0 +1,117 @@
+#use-added-syntax(jitx)
+defpackage ethernet-io/controller:
+  import core
+  import jitx
+  import jitx/commands
+  import jitx/parts
+
+  import jsl
+
+val rmii-bus = rmii(add-rx-error = false)
+
+doc: \<DOC>
+System Controller
+
+This circuit defines the interfaces to the microcontroller
+for this system.
+
+@member rail-3v3 3.3V Power rail for the microcontroller
+@member reset-n Active low reset for the microcontroller
+@member mii Media Independent Interface (RMII)
+@member mdio Management interface (MIIM)
+@member switch-irq-n Active low interrupt from the network switch
+@member switch-pme-n Active low power event interrupt from the network switch
+@member USB USB 2.0 Data Interface
+@member VDD-USB USB Connector Power Rail
+<DOC>
+public pcb-module controller :
+
+  port rail-3v3 : power
+
+  port reset-n
+
+  port mii : rmii-bus
+  port mdio : miim
+
+  port switch-irq-n
+  port switch-pme-n
+
+  port USB : usb-data
+  port VDD-USB : power
+
+
+  public inst ctl : stmicro/components/STM32H723VGT6/proto-circuit(hw-rev = 1)
+
+  net (rail-3v3, ctl.rail-3v3)
+
+  connect-require-ports(ctl.mcu, [reset-n], def-bundle = reset)
+  connect-require-ports(ctl.mcu, [switch-pme-n, switch-irq-n])
+
+  ; setup the RMII interface - we want
+  ;  to place resistors on the transmit pins
+  ;  from the MCU and short-trace them close
+  ;  to the MCU.
+
+  require mii-bus:rmii-bus from ctl.mcu
+
+  topo-bus([mii-bus.crs-dv, mii-bus.ref-clk, mii-bus.rxd] => [mii.crs-dv, mii.ref-clk, mii.rxd])
+
+  ; Create Series resistor
+  val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0603"])
+
+  val tx-bus = [mii-bus.txd, mii-bus.tx-en]
+  val tx-out = [mii.txd, mii.tx-en]
+  topo-bus(ShortTrace(tx-bus => series-R-type) => tx-out)
+
+  ; Set signal ends so we get the right routing
+  ;    structure all the way to the pin.
+  set-signal-end(mii, mii-bus)
+
+  require mng-bus : miim from ctl.mcu
+
+  net (mng-bus, mdio)
+  ; Add Pullup resistors
+  val pullup-miim = create-resistor(resistance = 4.7e3, precision = (1 %))
+
+  insert-pullup(mng-bus.mdio, rail-3v3, elem-type = pullup-miim)
+  val pullup-mdc = insert-pullup(mng-bus.mdc, rail-3v3, elem-type = pullup-miim)
+
+  ; Depopulate the Pullup on MDC because it
+  ;  is not needed according to the KSZ9563 datasheet
+  ;  This is a hedge.
+  instance-status(pullup-mdc):
+    bom-status = NotInBOM
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Debug Interface
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  public inst debug-if : FTDI/DebugIF/circuit(
+    FTDI/components/FT2232HL/FT2232H-MPSSE,
+    FTDI/components/FT2232HL/FT2232H-RS232
+    )
+  net (debug-if.VDD-3v3, rail-3v3)
+  net (debug-if.VDD-USB, VDD-USB)
+
+  net (debug-if.USB, USB)
+
+  ; Connect the Debug Interface to the
+  ;  MCU by requesting the necessary interfaces
+  ;  via pin assignment.
+
+  require acm:uart-fc() from debug-if.ftdi
+  require ctl-uart:uart-fc() from ctl.mcu
+  net (acm, ctl-uart)
+
+  require dbg:jtag from debug-if.ftdi
+  require ctl-dbg:jtag from ctl.mcu
+  net (dbg, ctl-dbg)
+
+  require reset-ctl:gpio from debug-if.ftdi
+  net (reset-ctl.gpio, reset-n)
+
+  require bootloader-en:gpio from debug-if.ftdi
+  net BOOT_EN (bootloader-en.gpio, ctl.boot-ctl)
+  require ctl-dbg-active:gpio from ctl.mcu
+  net DBG_ACTIVE (debug-if.ftdi.C.PWREN_n, ctl-dbg-active.gpio)
+
