@@ -8,6 +8,7 @@ defpackage ethernet-io/main :
 
   import ethernet-io/helpers
   import ethernet-io/power
+  import ethernet-io/controller
   import ethernet-io/transforms
 
   import jlc-pcb/stackups/vias
@@ -33,32 +34,6 @@ val C-query = CapacitorQuery(
 )
 
 doc: \<DOC>
-Reset Circuit
-
-See KSZ9563 Datasheet for more info
-@member rail Voltage rail for generating the reset signal
-@member reset_n Active low reset signal generated from tactle switch
-<DOC>
-pcb-module reset-circuit :
-  port rail : power
-  port reset_n
-
-  inst reset-sw : switches/tactile-sw/device
-  inst R : create-resistor(R-query, resistance = 10.0e3)
-  inst diode : diodes/SSA33L/component
-  inst delay-cap : create-capacitor(
-    C-query
-    capacitance = 10.0e-6,
-    rated-voltage = AtLeast(2.0 * 3.3),
-    )
-
-  net (diode.c, R.p[1], rail.V+)
-  net (diode.a, R.p[2], reset_n)
-  net (reset-sw.p[1], delay-cap.p[1], reset_n)
-  net (reset-sw.p[2], delay-cap.p[2], rail.V-)
-
-
-doc: \<DOC>
 EEPROM Configuration for the FTDI interface
 
 This module provides a EEPROM to store the configuration
@@ -72,7 +47,7 @@ pcb-module FTDI-EEPROM :
 
   port VDD-3v3 : power
 
-  port cfg : microwire-3wire()
+  port cfg : microwire-4()
 
   inst ROM : EEPROM/components/MC-93LC46/dev-93LC46C-I
   net (VDD-3v3, ROM.rail-VCC)
@@ -86,86 +61,13 @@ pcb-module FTDI-EEPROM :
 
   net (ROM.C.CS, cfg.cs)
   net (ROM.C.CLK, cfg.clk)
-  net (ROM.C.DI, cfg.do)
+  net (ROM.C.DI, cfg.di)
+  net (ROM.C.DO, cfg.do)
 
-  make-test-points(cfg)
-
-  ; Connect a DO -> uwire.data through a 2k resistor
-  insert-resistor(
-    ROM.C.DO, cfg.do,
-    R-query
-    resistance = 2.0e3,
-  )
-
-  insert-pullup(ROM.C.CS, VDD-3v3)
-  insert-pullup(ROM.C.CLK, VDD-3v3)
-  insert-pullup(ROM.C.DO, VDD-3v3)
   ; ORG => 1
   ;   Causes the EEPROM to use a 16-bit word.
   insert-pullup(ROM.C.ORG, VDD-3v3)
 
-
-doc: \<DOC>
-
-<DOC>
-pcb-module shield-term-t :
-  port SHIELD
-  port GND
-  insert-resistor(SHIELD, GND, R-query, resistance = 0.0, precision = (1 %))
-  insert-capacitor(SHIELD, GND, C-query, capacitance = 4.7e-9, rated-voltage = AtLeast(50.0))
-
-pcb-module usb-interface (USB2-RS:DifferentialRoutingStructure):
-  port USB : usb-data
-  port VDD-USB : power
-
-  inst USBC : connectors/components/USB/USBTypeC/device
-
-  net VUSB (VDD-USB, USBC.conn.vbus)
-
-  net GND (VUSB.V-)
-
-  inst zener : diodes/MMSZ4-zener/device(5100)
-  apply-power(zener, USBC.conn.vbus)
-
-  ; Two separate pull down resistors per the USB-C
-  ;  spec Section 4.5.1.2.1
-  ; https://www.usb.org/sites/default/files/USB%20Type-C%20Spec%20R2.0%20-%20August%202019.pdf
-  val pu-R = create-resistor(resistance = 5.1e3, precision = (1 %))
-  for i in indices(USBC.conn.bus.cc) do:
-    insert-pulldown(USBC.conn.bus.cc[i], GND, elem-type = pu-R)
-
-  ; This is the USB power connection that we will be used
-  ;  for debug power
-
-  make-test-points(VUSB.V+)
-
-  inst esd-prot : diodes/ESD224DQAR/device
-  net (esd-prot.GND[1], esd-prot.GND[2], GND)
-
-  val cst = USB-Constraint(proto = USB2, route-struct = USB2-RS)
-  within [src, dst] = constrain-topology(USB.data => USBC.conn.bus.data, cst):
-    require esd-pair:dual-pair from esd-prot
-    topo-pair(src => esd-pair.A => esd-pair.B => dst)
-
-  ; Shield Termination
-  inst shield-term : shield-term-t
-  net (shield-term.SHIELD, USBC.conn.shield)
-  net (shield-term.GND, GND)
-
-  ; Add Keepout for the USB interface.
-  val pt-pd-map = port-to-pads(USBC.J)
-  val pds = for kvp in pt-pd-map seq-cat:
-    value(kvp)
-  val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.25)
-  val KO = KeepoutOverlay(to-Rectangle(b))
-  make-keepout-overlay(
-    KO, USBC.J,
-    ; TODO - I want to use the stackup to construct the set
-    ;  of `Not(LayerIndex(1))` instead of explicitly calling
-    ;  out these 3 layers.
-    layer-set = [LayerIndex(0), LayerIndex(2), LayerIndex(3)]
-    name = "USBC-Keepout"
-    )
 
 pcb-module eth-interface :
   port GND
@@ -174,7 +76,7 @@ pcb-module eth-interface :
 
   for i in 0 to length(conns) do :
     ; RJ45 Shield Terminations
-    inst shield-term : shield-term-t
+    inst shield-term : shield-termination(R-query, C-query)
     net (shield-term.SHIELD, conns[i].SHIELD)
     net (shield-term.GND,    GND)
 
@@ -191,80 +93,6 @@ pcb-module eth-interface :
       layer-set = [LayerIndex(0), LayerIndex(1), LayerIndex(2), LayerIndex(3)]
       name = to-string("ETH%_-Shield-Keepout" % [i])
       )
-
-val rmii-bus = rmii(add-rx-error = false)
-
-pcb-module controller :
-
-  port rail-3v3 : power
-
-  port reset-n
-
-  port mii : rmii-bus
-  port mdio : miim
-
-  port switch-irq-n
-  port switch-pme-n
-
-  port dbg : jtag
-  port acm : uart-fc()
-  port boot-ctl
-  port dbg-active
-
-  public inst ctl : stmicro/components/STM32H723VGT6/proto-circuit(hw-rev = 1)
-
-  net (rail-3v3, ctl.rail-3v3)
-  net GND (rail-3v3.V-)
-
-  connect-require-ports(ctl.mcu, [dbg, acm])
-  connect-require-ports(ctl.mcu, [reset-n], def-bundle = reset)
-  connect-require-ports(ctl.mcu, [switch-pme-n, switch-irq-n, dbg-active])
-
-  net (boot-ctl, ctl.boot-ctl)
-
-  ; setup the RMII interface - we want
-  ;  to place resistors on the transmit pins
-  ;  from the MCU and short-trace them close
-  ;  to the MCU.
-
-  require mii-bus:rmii-bus from ctl.mcu
-
-  topo-bus([mii-bus.crs-dv, mii-bus.ref-clk, mii-bus.rxd] => [mii.crs-dv, mii.ref-clk, mii.rxd])
-
-  ; Create Series resistor
-  val series-R-type = create-resistor(resistance = 51.0, precision = (1 %), case = ["0603"])
-
-  val tx-bus = [mii-bus.txd, mii-bus.tx-en]
-  val tx-out = [mii.txd, mii.tx-en]
-  topo-bus(ShortTrace(tx-bus => series-R-type) => tx-out)
-
-  ; Set signal ends so we get the right routing
-  ;    structure all the way to the pin.
-  set-signal-end(mii, mii-bus)
-
-  require mng-bus : miim from ctl.mcu
-
-  ; Add Pullup resistors
-  net (mng-bus.mdc, mdio.mdc)
-  net (mng-bus.mdio, mdio.mdio)
-
-  make-test-points(mng-bus)
-
-  val pullup-miim = create-resistor(resistance = 4.7e3, precision = (1 %))
-
-  inst pullup-mdio : pullup-miim
-  net (pullup-mdio.p[1], mng-bus.mdio)
-  net (pullup-mdio.p[2], rail-3v3.V+)
-
-  inst pullup-mdc : pullup-miim
-  net (pullup-mdc.p[1], mng-bus.mdc)
-  net (pullup-mdc.p[2], rail-3v3.V+)
-
-  ; Depopulate the Pullup on MDC because it
-  ;  is not needed according to the KSZ9563 datasheet
-  ;  This is a hedge.
-  instance-status(pullup-mdc):
-    bom-status = NotInBOM
 
 public pcb-module comms-core :
   port rail-3v3 : power
@@ -337,6 +165,7 @@ public pcb-module comms-core :
   constrain-topology(ctl.mii => netsw.mii, rmii-cst)
 
   net MIIM (ctl.mdio, netsw.management)
+  make-test-points(MIIM)
 
   net SW_IRQ_N (netsw.irq-n, ctl.switch-irq-n)
   net SW_PME_N (netsw.power-evt-n, ctl.switch-pme-n)
@@ -345,10 +174,14 @@ public pcb-module comms-core :
   ; Reset switch
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-  inst reset-circ : reset-circuit
+  inst reset-circ : debug/circuits/ResetSwitch/reset-circuit(
+    delay = 10.0e-3
+    R-query = R-query,
+    C-query = C-query
+    )
   net (reset-circ.rail, pwr-mng.VDD-3v3)
 
-  net RESET_n (ctl.reset-n, reset-circ.reset_n, netsw.netsw.C.RESET_N)
+  net RESET_n (ctl.reset-n, reset-circ.reset-n, netsw.netsw.C.RESET_N)
   make-test-points(RESET_n)
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -356,35 +189,40 @@ public pcb-module comms-core :
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
   ; USB Interface
+  inst usb-if : connectors/components/USB/USBTypeC/USBC-HighSpeed-Iface(R-query, C-query)
+
+  ; Add a zener diode accross the USB power
+  inst zener : diodes/MMSZ4-zener/device(5100)
+  apply-power(zener, usb-if.VDD-USB)
+
   val USB2-RS = jlc-pcb/stackups/JLC04161H-7628/diff-90()
-  inst usb-if : usb-interface(USB2-RS)
+  val cst = USB-Constraint(proto = USB2, route-struct = USB2-RS)
+  constrain-topology(ctl.USB.data => usb-if.USB.data, cst)
 
-  ; FTDI Debug Interface
+  net (ctl.VDD-USB, usb-if.VDD-USB)
+  make-test-points(usb-if.VDD-USB.V+)
 
-  inst debug-if : FTDI/DebugIF/circuit(
-    FTDI/components/FT2232HL/FT2232H-MPSSE,
-    FTDI/components/FT2232HL/FT2232H-RS232
+  ; Add Keepout for the USB interface.
+  val pt-pd-map = port-to-pads(usb-if.USBC.J)
+  val pds = for kvp in pt-pd-map seq-cat:
+    value(kvp)
+  val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.25)
+  val KO = KeepoutOverlay(to-Rectangle(b))
+  make-keepout-overlay(
+    KO, usb-if.USBC.J,
+    ; TODO - I want to use the stackup to construct the set
+    ;  of `Not(LayerIndex(1))` instead of explicitly calling
+    ;  out these 3 layers.
+    layer-set = [LayerIndex(0), LayerIndex(2), LayerIndex(3)]
+    name = "USBC-Keepout"
     )
-  net (debug-if.VDD-3v3, PWR-3v3)
-  net (debug-if.VDD-USB, usb-if.VDD-USB, pwr-mng.VUSB-in)
 
-  net (debug-if.USB, usb-if.USB)
-
-  require acm:uart-fc() from debug-if.ftdi
-  require dbg:jtag from debug-if.ftdi
-  net (acm, ctl.acm)
-  net (dbg, ctl.dbg)
-
-  require reset-ctl:gpio from debug-if.ftdi
-  net (reset-ctl.gpio, RESET_n)
-
-  require bootloader-en:gpio from debug-if.ftdi
-  net BOOT_EN (bootloader-en.gpio, ctl.boot-ctl)
-  net DBG_ACTIVE (debug-if.ftdi.C.PWREN_n, ctl.dbg-active)
-
+  ; FTDI Configuration
   inst eeprom : FTDI-EEPROM
   net (eeprom.VDD-3v3, rail-3v3)
-  net (eeprom.cfg, debug-if.CFG)
+  net CFG (eeprom.cfg, ctl.debug-if.CFG)
+
+  make-test-points(CFG)
 
 
 ; Module to run as a design
@@ -395,7 +233,6 @@ pcb-module top-level :
   net GND (core.rail-3v3.V-)
 
   ; Sensors and Control Interfaces Instantiate here.
-
 
   ; Board Level Physical Features
   geom(GND):
