@@ -101,7 +101,13 @@ public pcb-module controller :
 
   require acm:uart-fc() from debug-if.ftdi
   require ctl-uart:uart-fc() from ctl.mcu
-  net (acm, ctl-uart)
+  ; Connecting in a null-modem loopback
+  ;  TX -> RX
+  ;  RX -> TX
+  net (acm.tx, ctl-uart.rx)
+  net (acm.rx, ctl-uart.tx)
+  net (acm.rts, ctl-uart.cts)
+  net (acm.cts, ctl-uart.rts)
 
   require dbg:jtag from debug-if.ftdi
   require ctl-dbg:jtag from ctl.mcu
