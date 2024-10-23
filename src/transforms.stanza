@@ -67,7 +67,20 @@ defn gen-chip-pkg (component:Instantiable) -> LandPattern|Package :
       "capacitor": get-capacitor-pkg(case, keep-out = ko)
       else: get-chip-pkg(case)
 
+doc: \<DOC>
+Replace 2-pin circuit element landpatterns with JSL alternatives.
 
+This function is a module transformation. It will find
+resistors and capacitors and replace their default landpattern with a
+customized JSL variant.
+
+This operation does not modify the pre-existing module - it creates a new module
+with transformed characteristics
+
+@param module The module to transform.
+@param cat-type Category, either `resistor` or `capacitor`
+@param gen-pkg Function to generate the replacment landpattern depending on category.
+<DOC>
 public defn replace-element-landpatterns (module:Instantiable, cat-type:String, gen-pkg:(Instantiable -> Package|LandPattern)) -> Instantiable :
   within component = modify-components(module):
     inside pcb-module:
