@@ -11,8 +11,6 @@ defpackage ethernet-io/main :
   import ethernet-io/controller
   import ethernet-io/transforms
 
-  import jlc-pcb/stackups/vias
-
   import jsl
   import power-systems
   import debug/test-points
@@ -68,7 +66,14 @@ pcb-module FTDI-EEPROM :
   ;   Causes the EEPROM to use a 16-bit word.
   insert-pullup(ROM.C.ORG, VDD-3v3)
 
+doc: \<DOC>
+Ethernet Connector's Interface
 
+This module instantiates the connectors and defines the shield
+terminations.
+
+@member GND Ground reference for the circuit
+<DOC>
 pcb-module eth-interface :
   port GND
 
@@ -81,19 +86,29 @@ pcb-module eth-interface :
     net (shield-term.GND,    GND)
 
     ; Keepouts for the RJ45 connectors
-
-    ; First we will do a keepout for all layers for the shield and
-    ;   mounting holes for the connectors.
     val pds = get-pads-from-ports([conns[i].J.SHIELD, conns[i].J.MOUNT])
     val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.5)
     val KO = KeepoutOverlay(to-Rectangle(b))
     make-keepout-overlay(
       KO, conns[i].J,
-      ; TODO Get All Layers here via Introspection
-      layer-set = [LayerIndex(0), LayerIndex(1), LayerIndex(2), LayerIndex(3)]
+      layer-set = conductors-by-index(stackup(substrate))
       name = to-string("ETH%_-Shield-Keepout" % [i])
       )
 
+doc: \<DOC>
+Communication Core
+
+This module is intended to be a reusable component capable
+of providing a gigabit ethernet interface and a microcontroller.
+
+The user can access the microcontroller via the `ctl` public instance
+and use pin assignment statements (eg, `require`) to request GPIO or other
+peripherals from that microcontroller.
+
+@member rail-3v3 3.3V Power voltage rail that can be used to supply power
+to auxilliary circuits.
+
+<DOC>
 public pcb-module comms-core :
   port rail-3v3 : power
 
@@ -106,7 +121,7 @@ public pcb-module comms-core :
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Gigabit Network Switch
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-  inst netsw : microchip-networking/components/KSZ9563/circuit(therm-via = tented-filled-std-via)
+  inst netsw : microchip-networking/components/KSZ9563/circuit(substrate)
 
   net PWR-3v3 (pwr-mng.VDD-3v3, netsw.VDD-3v3, rail-3v3)
   net PWR-1v2 (pwr-mng.VDD-1v2, netsw.VDD-1v2)
@@ -120,7 +135,7 @@ public pcb-module comms-core :
   ;  to the ethernet MDIs
   val esd = diodes/ESD224DQAR/create-esd-pool(4, GND)
   val mdi-constraint = MDI-1000Base-T-Constraint(
-    route-struct = jlc-pcb/stackups/JLC04161H-7628/diff-100()
+    route-struct = diff-routing-struct(substrate, 100)
   )
   for i in 0 to length(eth-if.conns) do:
     require MDI : MDI-1000Base-T from netsw.netsw
@@ -137,19 +152,17 @@ public pcb-module comms-core :
   ; The RJ45 connectors have embedded LEDs - so we will use
   ;  drive those LEDs from the netsw component
 
-  ; @TODO - check bias resistor value here -
-  ;  compute from characteristics of netsw device IO and
-  ;  forward voltage of the LED.
+  val LED-R = 330.0
 
   ; val LED-pts = [netsw.netsw.C.LED1, netsw.netsw.C.LED2]
   for (i in 0 to length(eth-if.conns)) do:
     val led-g = eth-if.conns[i].LED-G
-    insert-resistor(rail-3v3.V+, led-g.a, R-query, resistance = 330.0)
+    insert-resistor(rail-3v3.V+, led-g.a, R-query, resistance = LED-R)
     ; net (led-g.c, LED-pt[0])
     net (led-g.c, netsw.LEDs[i][0])
 
     val led-y = eth-if.conns[i].LED-Y
-    insert-resistor(rail-3v3.V+, led-y.a, R-query, resistance = 330.0)
+    insert-resistor(rail-3v3.V+, led-y.a, R-query, resistance = LED-R)
     ; net (led-y.c, LED-pt[1])
     net (led-y.c, netsw.LEDs[i][1])
 
@@ -160,7 +173,7 @@ public pcb-module comms-core :
   public inst ctl : controller
   net (pwr-mng.VDD-3v3, ctl.rail-3v3)
 
-  val se-50 = jlc-pcb/stackups/JLC04161H-7628/se-50(neckdown = NeckDown(clearance = 0.1))
+  val se-50 = se-routing-struct(substrate, 50, neckdown = NeckDown(clearance = 0.1))
   val rmii-cst = RMII-Constraint(se-50)
   constrain-topology(ctl.mii => netsw.mii, rmii-cst)
 
@@ -191,15 +204,15 @@ public pcb-module comms-core :
   ; USB Interface
   inst usb-if : connectors/components/USB/USBTypeC/USBC-HighSpeed-Iface(R-query, C-query)
 
-  ; Add a zener diode accross the USB power
+  ; Add a zener diode across the USB power
   inst zener : diodes/MMSZ4-zener/device(5100)
   apply-power(zener, usb-if.VDD-USB)
 
-  val USB2-RS = jlc-pcb/stackups/JLC04161H-7628/diff-90()
+  val USB2-RS = diff-routing-struct(substrate, 90)
   val cst = USB-Constraint(proto = USB2, route-struct = USB2-RS)
   constrain-topology(ctl.USB.data => usb-if.USB.data, cst)
 
-  net (ctl.VDD-USB, usb-if.VDD-USB)
+  net (ctl.VDD-USB, usb-if.VDD-USB, pwr-mng.VUSB-in)
   make-test-points(usb-if.VDD-USB.V+)
 
   ; Add Keepout for the USB interface.
@@ -208,12 +221,12 @@ public pcb-module comms-core :
     value(kvp)
   val b = bounds(pds, layer-spec = SolderMask(Top), expand-by = 0.25)
   val KO = KeepoutOverlay(to-Rectangle(b))
+  val USB-KO-layers =
   make-keepout-overlay(
     KO, usb-if.USBC.J,
-    ; TODO - I want to use the stackup to construct the set
-    ;  of `Not(LayerIndex(1))` instead of explicitly calling
-    ;  out these 3 layers.
-    layer-set = [LayerIndex(0), LayerIndex(2), LayerIndex(3)]
+    ; I'm creating a keepout for all layers except the ground
+    ;  plane on `Top + 1`
+    layer-set = conductors-by-index(stackup(substrate), omits = [Top + 1])
     name = "USBC-Keepout"
     )
 
