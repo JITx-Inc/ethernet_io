@@ -5,6 +5,8 @@ defpackage ethernet-io/power:
   import jitx/commands
   import jitx/parts/query-api
 
+  import ethernet-io/helpers
+
   import jsl
   import power-systems
   import debug/test-points
@@ -191,9 +193,7 @@ public pcb-module PowerInConn :
   val KO = KeepoutOverlay(to-Rectangle(b))
   make-keepout-overlay(
     KO, TB,
-    ; TODO - I want to use the stackup to construct the "All" set
-    ;  of layers here.
-    layer-set = [LayerIndex(0), LayerIndex(1), LayerIndex(2), LayerIndex(3)]
+    layer-set = conductors-by-index(stackup(substrate))
     name = "24V-Keepout"
     )
 

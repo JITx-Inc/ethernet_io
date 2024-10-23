@@ -1,14 +1,14 @@
 name = "ethernet_io"
 version = "0.1.0"
 [dependencies]
-jsl = { git = "JITx-Inc/jsl", version = "0.8.1"}
+jsl = { git = "JITx-Inc/jsl", version = "0.9.0"}
 connectors = { git = "JITx-Inc/connectors", version = "0.4.0" }
-FTDI = { git = "JITx-Inc/FTDI", version = "0.3.2" }
-jlc-pcb = { git = "JITx-Inc/jlc-pcb", version = "0.2.0" }
+FTDI = { git = "JITx-Inc/FTDI", version = "0.3.3" }
+jlc-pcb = { git = "JITx-Inc/jlc-pcb", version = "0.3.0" }
 stmicro = { git = "JITx-Inc/stmicro", version = "0.4.0" }
 TI-vreg = { git = "JITx-Inc/TI-VREG", version = "0.3.1" }
-microchip-networking = { git = "JITx-Inc/microchip-networking", version = "0.4.0" }
-EEPROM = { git = "JITx-Inc/EEPROM", version = "0.3.1" }
-debug = { git = "JITx-Inc/debug", version = "0.3.2" }
+microchip-networking = { git = "JITx-Inc/microchip-networking", version = "0.5.0" }
+EEPROM = { git = "JITx-Inc/EEPROM", version = "0.3.2" }
+debug = { git = "JITx-Inc/debug", version = "0.3.3" }
 diodes = { git = "JITx-Inc/diodes", version = "0.2.0" }
 passives = { git = "JITx-Inc/passives", version = "0.1.0" }

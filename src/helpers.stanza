@@ -6,23 +6,18 @@ defpackage ethernet-io/helpers :
 
   import jsl
 
-  import jlc-pcb/stackups/vias
   import jlc-pcb/rules/multi_1oz
 
-defn board-def (outline:Shape, signal-shrink:Maybe<Double> = None()):
-  pcb-board board-def-pcb:
-    stackup = jlc-pcb/stackups/JLC04161H-7628/stackup
-    boundary = outline
-    match(signal-shrink):
-      (_:None): false
-      (given:One<Double>):
-        val shrink = value(given)
-        ensure-positive!("signal-shrink", shrink)
-        signal-boundary = expand(outline, (- shrink))
-    vias = [
-      std-via-preferred, tented-filled-std-via
-    ]
-  board-def-pcb
+doc: \<DOC>
+PCB Substrate
+
+This object defines features of the PCB board and provides
+a mechanism for accessing definitions for vias, routing structures,
+etc.
+
+<DOC>
+public val substrate = jlc-pcb/stackups/JLC04161H-1080/JLC04161H-1080()
+
 ; ============
 ; setup-design
 ; ============
@@ -32,12 +27,14 @@ Setup the Board Definition
 @param name Names the current design. This will define the name shown
 in the drop down of the schematic and board visualizer.
 @param outline Shape of the board.
-@param signal-shrink
+@param signal-shrink Offset for the signal boundary from the board outline shape.
+This allows us to restrict signals to a smaller area inside the outline away from
+the board edge. This value is in mm and is expected to be positive. If no
+value is provided then the signal boundary shape is the same as the board outline.
 <DOC>
 public defn setup-board (name:String, outline:Shape -- signal-shrink:Double = ?):
   set-current-design(name)
-
-  set-board(board-def(outline, signal-shrink))
+  set-board(make-board-def(substrate, outline, signal-shrink = signal-shrink))
   set-rules(jlcpcb-rules-multi-1oz)
   ; TODO - We need to replace this with the new query api via the
   ;  `set-global-query-defaults!` function.
