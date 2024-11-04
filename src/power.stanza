@@ -106,7 +106,6 @@ public pcb-module power-mng:
     C-query? = C-query
     )
 
-  ; inst DCDC-3v3 : DCDC-5V-to-3v3
   net (USB-OR.vout, DCDC-3v3.conv.VIN)
   net (DCDC-3v3.conv.VOUT, VDD-3v3)
 
@@ -144,7 +143,6 @@ public pcb-module power-mng:
     )
 
 
-  ; inst DCDC-1v2 : DCDC-5V-to-1v2
   net (USB-OR.vout, DCDC-1v2.conv.VIN)
   net (DCDC-1v2.conv.VOUT, VDD-1v2)
 
