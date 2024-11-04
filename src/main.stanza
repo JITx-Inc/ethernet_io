@@ -138,33 +138,29 @@ public pcb-module comms-core :
     route-struct = diff-routing-struct(substrate, 100)
   )
   for i in 0 to length(eth-if.conns) do:
-    require MDI : MDI-1000Base-T from netsw.netsw
+    ; We have to use a special bundle type that includes the LEDs
+    ;   so the proper LED control pins connected to the right ethernet
+    ;   connector.
+    val P-bundle = microchip-networking/components/KSZ9563/MDI-1000BaseT-With-LEDs
+    require P : P-bundle  from netsw.netsw
     require conn-IF : MDI-1000Base-T from eth-if.conns[i]
 
-    within [src, dst] = constrain-topology(MDI => conn-IF, mdi-constraint):
+    within [src, dst] = constrain-topology(P.MDI => conn-IF, mdi-constraint):
       require prot-MDI : dual-pair[NUM_PAIRS_1000Base-T] from esd
 
       topology MDI (src.TP => dst.TP)
       for i in 0 to NUM_PAIRS_1000Base-T do:
         topo-pair(src.TP[i] => prot-MDI[i].A => prot-MDI[i].B  => dst.TP[i])
 
-  ;;  ----  LED Setup ------
-  ; The RJ45 connectors have embedded LEDs - so we will use
-  ;  drive those LEDs from the netsw component
-
-  val LED-R = 330.0
-
-  ; val LED-pts = [netsw.netsw.C.LED1, netsw.netsw.C.LED2]
-  for (i in 0 to length(eth-if.conns)) do:
+    ; Connect LEDs
+    val LED-R = 330.0
     val led-g = eth-if.conns[i].LED-G
     insert-resistor(rail-3v3.V+, led-g.a, R-query, resistance = LED-R)
-    ; net (led-g.c, LED-pt[0])
-    net (led-g.c, netsw.LEDs[i][0])
+    net (led-g.c, P.LED[0])
 
     val led-y = eth-if.conns[i].LED-Y
     insert-resistor(rail-3v3.V+, led-y.a, R-query, resistance = LED-R)
-    ; net (led-y.c, LED-pt[1])
-    net (led-y.c, netsw.LEDs[i][1])
+    net (led-y.c, P.LED[1])
 
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ; Microcontroller
